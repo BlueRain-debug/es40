@@ -1912,8 +1912,6 @@ void CS3Trio64::mem_w(offs_t offset, uint8_t data)
 
 uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprect)
 {
-	CVGA::screen_update(bitmap, cliprect);
-
 	uint8_t cur_mode = pc_vga_choosevideomode();
 
 #ifdef DEBUG_VGA_RENDER
@@ -1958,6 +1956,12 @@ uint32_t CS3Trio64::screen_update(bitmap_rgb32& bitmap, const rectangle& cliprec
 
 #endif
 
+	if (cur_mode >= RGB8_MODE && cur_mode <= RGB32_MODE) {
+		s3_vh_svga(bitmap, cliprect, cur_mode);
+	} else {
+		CVGA::screen_update(bitmap, cliprect);
+	}
+	
 	// draw hardware graphics cursor
 	// TODO: support 16 bit and greater video modes
 	// TODO: should be a derived function from svga_device
@@ -4565,6 +4569,10 @@ void CS3Trio64::determine_screen_dimensions(unsigned* piHeight,
 		}
 		else if ((h >= 640) && (v >= 480))
 		{
+			if (s3.memory_config & 0x08) {
+				if (svga.rgb15_en || svga.rgb16_en)
+					h >>= 1;
+			}
 			*piWidth = h;
 			*piHeight = v;
 		}
@@ -4746,5 +4754,70 @@ void CS3Trio64::s3_draw_hardware_cursor(
 				row_src += 4;
 		}
 		src = row_src; // advance to next row
+	}
+}
+
+void CS3Trio64::s3_vh_svga(bitmap_rgb32& bitmap, const rectangle& cliprect, uint8_t cur_mode)
+{
+	int height = vga.crtc.maximum_scan_line * (vga.crtc.scan_doubling + 1);
+	if (height == 0) height = 1;
+	const int TLINES = (vga.crtc.vert_disp_end + 1) * (get_interlace_mode() + 1);
+	int bpp = BytesPerPixel();
+
+	const int pixels_per_line = cliprect.max_x + 1;
+
+	uint32_t start_addr = vga.crtc.start_addr;
+	if (cur_mode != RGB8_MODE) {
+		start_addr <<= 2;
+	}
+
+	for (int addr = start_addr, line = 0; line < TLINES; line += height, addr += offset())
+	{
+		for (int y = 0; y < height; y++)
+		{
+			if (line + y > cliprect.max_y)
+				break;
+			uint32_t* const bitmapline = &bitmap.pix(line + y);
+			uint32_t line_addr = addr % vga.svga_intf.vram_size;
+			
+			for (int x = 0; x < pixels_per_line; x++)
+			{
+				uint32_t pos = (line_addr + x * bpp) % vga.svga_intf.vram_size;
+				
+				if (cur_mode == RGB8_MODE) {
+					bitmapline[x] = pen(vga.memory[pos]);
+				} else if (cur_mode == RGB15_MODE) {
+					uint16_t c = vga.memory[pos] | (vga.memory[pos+1] << 8);
+					int r = (c & 0x7c00) >> 10;
+					int g = (c & 0x03e0) >> 5;
+					int b = (c & 0x001f) >> 0;
+					r = (r << 3) | (r & 0x7);
+					g = (g << 3) | (g & 0x7);
+					b = (b << 3) | (b & 0x7);
+					bitmapline[x] = 0xff000000 | (r << 16) | (g << 8) | b;
+				} else if (cur_mode == RGB16_MODE) {
+					uint16_t c = vga.memory[pos] | (vga.memory[pos+1] << 8);
+					int r = (c & 0xf800) >> 11;
+					int g = (c & 0x07e0) >> 5;
+					int b = (c & 0x001f) >> 0;
+					r = (r << 3) | (r & 0x7);
+					g = (g << 2) | (g & 0x3);
+					b = (b << 3) | (b & 0x7);
+					bitmapline[x] = 0xff000000 | (r << 16) | (g << 8) | b;
+				} else if (cur_mode == RGB24_MODE) {
+					uint32_t c = vga.memory[pos] | (vga.memory[pos+1] << 8) | (vga.memory[pos+2] << 16);
+					int r = (c & 0xff0000) >> 16;
+					int g = (c & 0x00ff00) >> 8;
+					int b = (c & 0x0000ff) >> 0;
+					bitmapline[x] = 0xff000000 | (r << 16) | (g << 8) | b;
+				} else if (cur_mode == RGB32_MODE) {
+					uint32_t c = vga.memory[pos] | (vga.memory[pos+1] << 8) | (vga.memory[pos+2] << 16);
+					int r = (c & 0xff0000) >> 16;
+					int g = (c & 0x00ff00) >> 8;
+					int b = (c & 0x0000ff) >> 0;
+					bitmapline[x] = 0xff000000 | (r << 16) | (g << 8) | b;
+				}
+			}
+		}
 	}
 }
