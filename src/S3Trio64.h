@@ -286,6 +286,8 @@ protected:
     int clip_width, int clip_height,
     uint8_t cur_mode);
 
+  void s3_vh_svga(bitmap_rgb32& bitmap, const rectangle& cliprect, uint8_t cur_mode);
+
   inline void vram_write_dirty(uint32_t addr, uint8_t v) {
     vga.memory[addr % vga.svga_intf.vram_size] = v;
     state.vga_mem_updated = 1;
