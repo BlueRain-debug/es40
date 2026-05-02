@@ -4761,7 +4761,7 @@ void CS3Trio64::s3_vh_svga(bitmap_rgb32& bitmap, const rectangle& cliprect, uint
 {
 	int height = vga.crtc.maximum_scan_line * (vga.crtc.scan_doubling + 1);
 	if (height == 0) height = 1;
-	const int TLINES = (vga.crtc.vert_disp_end + 1) * (get_interlace_mode() + 1);
+	const int total_lines = (vga.crtc.vert_disp_end + 1) * (get_interlace_mode() + 1);
 	int bpp = BytesPerPixel();
 
 	const int pixels_per_line = cliprect.max_x + 1;
@@ -4771,7 +4771,7 @@ void CS3Trio64::s3_vh_svga(bitmap_rgb32& bitmap, const rectangle& cliprect, uint
 		start_addr <<= 2;
 	}
 
-	for (int addr = start_addr, line = 0; line < TLINES; line += height, addr += offset())
+	for (int addr = start_addr, line = 0; line < total_lines; line += height, addr += offset())
 	{
 		for (int y = 0; y < height; y++)
 		{
