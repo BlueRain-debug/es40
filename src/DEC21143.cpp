@@ -451,6 +451,7 @@ void CDEC21143::init()
 	state.tx.idling = 0;
 
 	ResetPCI();
+	ResetNIC();   // explicit one-shot internal reset; previously implicit via ResetPCI
 
 	myThread = 0;
 
@@ -1729,7 +1730,13 @@ void CDEC21143::ResetPCI()
 {
 	CPCIDevice::ResetPCI();
 
-	ResetNIC();
+	// Do NOT call ResetNIC() here. PCI bus reset (pchip 0x800, fired by LFU)
+	// must preserve the chip's internal CSRs to match qemu's tulip behavior.
+	// SRM does a partial NIC config (CSR0/13/6/7) immediately before triggering
+	// the LFU self-IPI and expects that config to survive the bus reset, so it
+	// skips re-init on the LFU restart path. Internal reset still happens via:
+	//   - explicit ResetNIC() in init() (one-shot at construction)
+	//   - BUSMODE_SWR (CSR0=1), which calls ResetNIC() inline in nic_write()
 }
 
 /**
