@@ -205,6 +205,10 @@ private:
   void      pic_write_edge_level(int index, u8 data);
   u8        pic_control_read(u32 address);
   void      pic_control_write(u32 address, u8 data);
+  int       pic_get_irq(int index);
+  void      pic_update_output(int index);
+  void      pic_intack(int index, int irq);
+  void      pic_init_reset(int index);
 
   // LPT controller
   u8        lpt_read(u32 address);
@@ -251,14 +255,28 @@ private:
     u8    pit_status[4];
     u8    pit_mode[4];
 
-    // interrupt controller
-    int   pic_mode[2];
-    u8    pic_intvec[2];
-    u8    pic_mask[2];
-    u8    pic_asserted[2];
-    u8    pic_edge_level[2];
-    u8    pic_control_index;   // latched index for 0x22/0x23 backdoor
-    u8    pic_control_regs[6]{}; // currently unused
+    // interrupt controller  IRR (request) and ISR (in-service) are kept 
+    // separate so an edge that arrives while a higher-priority IRQ is in 
+    // service is still latched and re-fires after EOI. 
+    u8    pic_irr[2];               // raw interrupt request register
+    u8    pic_imr[2];               // interrupt mask register (1 = masked)
+    u8    pic_isr[2];               // in-service register
+    u8    pic_last_irr[2];          // line history for edge detection
+    u8    pic_irq_base[2];          // ICW2 vector base (was pic_intvec)
+    u8    pic_priority_add[2];      // priority rotation offset
+    u8    pic_read_reg_select[2];   // OCW3 bit 0: 0=IRR, 1=ISR readback
+    u8    pic_poll[2];              // OCW3 poll-mode pending
+    u8    pic_special_mask[2];      // OCW3 special mask mode
+    u8    pic_init_state[2];        // 0=normal, 1=ICW2, 2=ICW3, 3=ICW4
+    u8    pic_auto_eoi[2];          // ICW4 AEOI bit
+    u8    pic_rotate_on_aeoi[2];    // OCW2 rotate-on-AEOI
+    u8    pic_special_fnm[2];       // ICW4 special fully nested mode
+    u8    pic_init4[2];             // ICW1 bit 0: ICW4 needed
+    u8    pic_single_mode[2];       // ICW1 bit 1: single PIC, no slave
+    u8    pic_elcr[2];              // edge/level control register (ELCR)
+    u8    pic_ltim[2];              // ICW1 bit 3: level-trigger global mode
+    u8    pic_control_index;        // latched index for 0x22/0x23 backdoor
+    u8    pic_control_regs[6]{};    // currently unused
 
     u8    lpt_data;
     u8    lpt_control;
