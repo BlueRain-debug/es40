@@ -1189,7 +1189,11 @@ void CAliM1543C_ide::set_signature(int index, int id)
 	}
 	else
 	{
+		// No drive at this slot - registers should all float high (0xFF)
 		REGISTERS(index, id).cylinder_no = 0xffff;
+		REGISTERS(index, id).head_no = 0xff;
+		REGISTERS(index, id).sector_count = 0xff;
+		REGISTERS(index, id).sector_no = 0xff;
 	}
 }
 
