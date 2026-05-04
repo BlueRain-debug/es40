@@ -410,6 +410,10 @@ void CAliM1543C::init()
 	// SuperIO
 	add_legacy_io(40, 0x370, 2);
 
+	// Populate the SuperIO chip-level / LDN register banks 
+	// power on defaults
+	superio_reset();
+
 	// ISA Plug-and-Play address (0x279) and write-data (0xA79) ports.
 	// The OS-selectable READ_DATA port (id 52) is registered dynamically
 	// when the OS programs it via PnP register 0x00.
