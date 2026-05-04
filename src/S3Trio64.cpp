@@ -3459,7 +3459,7 @@ u32 CS3Trio64::ReadMem_Bar(int func, int bar, u32 address, int dsize)
  **/
 void CS3Trio64::WriteMem_Bar(int func, int bar, u32 address, int dsize, u32 data)
 {
-#if DEBUG_PCI
+#ifdef DEBUG_PCI
 	printf("[S3::WriteMem_Bar] func=%d bar=%d addr=%08X dsize=%d data=%08X\n",
 		func, bar, address, dsize, data);
 #endif
