@@ -1026,6 +1026,7 @@ int CTraceEngine::parse(char command[100][100])
 				while (!got_sigint)
 				{
 					theSystem->SingleStep();
+					theSystem->ProcessPendingReset();
 				}
 
 				got_sigint = 0;

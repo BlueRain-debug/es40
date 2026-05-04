@@ -282,6 +282,7 @@ public:
   void          cpu_break_lock(int cpuid, CSystemComponent* source);
   void          RequestSystemReset();
   bool          IsSystemResetRequested() const;
+  bool          ProcessPendingReset();   // Returns true if a reset was performed.
 
 private:
   void          ResetChipsetState();

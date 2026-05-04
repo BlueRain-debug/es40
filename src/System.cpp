@@ -587,37 +587,8 @@ void CSystem::Run()
 		if (got_sigint)
 			FAILURE(Graceful, "CTRL-C detected");
 
-		struct ResetInProgressGuard
-		{
-			CSystem* sys;
-			explicit ResetInProgressGuard(CSystem* s) : sys(s) { sys->SetResetInProgress(true); }
-			~ResetInProgressGuard() { sys->SetResetInProgress(false); }
-		};
-
-		if (m_reset_requested.exchange(false, std::memory_order_acq_rel))
-		{
-			printf("\n%%SYS-I-RESET: System reset requested by firmware.\n");
-			if (theSROM)
-				theSROM->FlushIfDirty();
-
-			ResetInProgressGuard rip(this);   // (right before stop_threads)
-
-			stop_threads();
-
-			ResetChipsetState();
-
-			for (int dev = 0; dev < iNumComponents; dev++)
-				acComponents[dev]->ResetPCI();
-
-			for (int cpu = 0; cpu < iNumCPUs; cpu++)
-				acCPUs[cpu]->ResetForSystemReset();
-
-			LoadROM();
-			start_threads();
-
-			// No explicit clear needed — guard destructor clears it
+		if (ProcessPendingReset())
 			continue;
-		}
 
 
 		CThread::sleep(100); // 100ms sleep
@@ -647,6 +618,34 @@ void CSystem::RequestSystemReset()
 bool CSystem::IsSystemResetRequested() const
 {
 	return m_reset_requested.load(std::memory_order_acquire);
+}
+
+bool CSystem::ProcessPendingReset()
+{
+	if (!m_reset_requested.exchange(false, std::memory_order_acq_rel))
+		return false;
+
+	struct ResetInProgressGuard
+	{
+		CSystem* sys;
+		explicit ResetInProgressGuard(CSystem* s) : sys(s) { sys->SetResetInProgress(true); }
+		~ResetInProgressGuard() { sys->SetResetInProgress(false); }
+	};
+
+	printf("\n%%SYS-I-RESET: System reset requested by firmware.\n");
+	if (theSROM)
+		theSROM->FlushIfDirty();
+
+	ResetInProgressGuard rip(this);
+	stop_threads();
+	ResetChipsetState();
+	for (int dev = 0; dev < iNumComponents; dev++)
+		acComponents[dev]->ResetPCI();
+	for (int cpu = 0; cpu < iNumCPUs; cpu++)
+		acCPUs[cpu]->ResetForSystemReset();
+	LoadROM();
+	start_threads();
+	return true;
 }
 
 void CSystem::ResetChipsetState()
