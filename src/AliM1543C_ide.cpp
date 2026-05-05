@@ -1197,6 +1197,16 @@ void CAliM1543C_ide::set_signature(int index, int id)
 	}
 }
 
+// PCI IDE programming-interface bit per channel (cfg byte 0x09):
+//   bit 0 = primary native, bit 2 = secondary native; 0 = compat mode.
+// Compat mode:  ISA IRQ 14/15 via 8259 cascade — no PCI INTx.
+// Native mode:  shared PCI INTA — no 8259 IRQ.
+bool CAliM1543C_ide::channel_is_native(int index)
+{
+	const u8 prog_if = (endian_32(pci_state.config_data[0][0x02]) >> 8) & 0xff;
+	return (prog_if >> (index ? 2 : 0)) & 1;
+}
+
 void CAliM1543C_ide::raise_interrupt(int index)
 {
 	if (!CONTROLLER(index).disable_irq)
@@ -1213,8 +1223,10 @@ void CAliM1543C_ide::raise_interrupt(int index)
 		}
 		UPDATE_ALT_STATUS(index);
 		CONTROLLER(index).interrupt_pending = true;
-		theAli->pic_interrupt(1, 6 + index);
-		do_pci_interrupt(0, true);
+		if (channel_is_native(index))
+			do_pci_interrupt(0, true);
+		else
+			theAli->pic_interrupt(1, 6 + index);
 #else
 		CONTROLLER(index).interrupt_pending = true;
 #endif
@@ -1234,9 +1246,14 @@ void CAliM1543C_ide::deassert_interrupt(int index)
 		return;
 
 	CONTROLLER(index).interrupt_pending = false;
-	theAli->pic_deassert(1, 6 + index);
-	if (!CONTROLLER(0).interrupt_pending && !CONTROLLER(1).interrupt_pending)
-		do_pci_interrupt(0, false);
+	if (channel_is_native(index)) {
+		// PCI INTA is shared between both channels; only drop the line
+		// when neither channel still has work pending.
+		if (!CONTROLLER(0).interrupt_pending && !CONTROLLER(1).interrupt_pending)
+			do_pci_interrupt(0, false);
+	} else {
+		theAli->pic_deassert(1, 6 + index);
+	}
 }
 
 u8 CAliM1543C_ide::get_status(int index)
@@ -2818,14 +2835,17 @@ void CAliM1543C_ide::run()
 					execute(index);
 				UPDATE_ALT_STATUS(index);
 
-#ifdef IDE_YIELD_INTERRUPTS  
+#ifdef IDE_YIELD_INTERRUPTS
 				if (CONTROLLER(index).interrupt_pending) {
 					{
 						SCOPED_WRITE_LOCK(mtBusMaster[index]);
 						if (CONTROLLER(index).busmaster[0] & 0x01)
 							CONTROLLER(index).busmaster[2] |= 0x04;
 					}
-					theAli->pic_interrupt(1, 6 + index);
+					if (channel_is_native(index))
+						do_pci_interrupt(0, true);
+					else
+						theAli->pic_interrupt(1, 6 + index);
 				}
 #endif
 

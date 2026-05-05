@@ -210,6 +210,7 @@ private:
 
   void  raise_interrupt(int channel);
   void  deassert_interrupt(int channel);
+  bool  channel_is_native(int channel);
   void  set_signature(int channel, int id);
   u8    get_status(int index);
   void  command_aborted(int index, u8 command);
