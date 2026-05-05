@@ -858,6 +858,23 @@ int main(int argc, char* argv[])
 	lpt_q.setExplanation("Output from the printer port will be saved to this file. Leave blank if not wanted.");
 	lpt_q.ask();
 
+
+	MultipleChoiceQuestion pmu_q;
+	pmu_q.setQuestion("Enable the M7101 power-management / ACPI device at PCI 0:17?");
+	pmu_q.setExplanation("AliM1543C chipset power management unit");
+	pmu_q.addAnswer("yes", "true", "Enable the PMU");
+	pmu_q.addAnswer("no", "false", "Disable the PMU");
+	pmu_q.setDefault("yes");
+	pmu_q.ask();
+
+	MultipleChoiceQuestion usb_q;
+	usb_q.setQuestion("Enable the USB OHCI controller at PCI 0:19?");
+	usb_q.setExplanation("AliM1543C chipset USB controller");
+	usb_q.addAnswer("yes", "true", "Enable the USB controller");
+	usb_q.addAnswer("no", "false", "Disable the USB controller");
+	usb_q.setDefault("yes");
+	usb_q.ask();
+
 	os << "  pci0.7 = ali\n";
 	os << "  {\n";
 	os << "    mouse.enabled = " << mouse_q.getAnswer() << ";\n";
@@ -866,12 +883,19 @@ int main(int argc, char* argv[])
 		os << "    lpt.outfile = \"" << lpt_q.getAnswer() << "\"\n";
 	os << "  }\n\n";
 
-	/* The USB device is a fixed part, and
-	 * currently not configurable.
-	 */
-	os << "  pci0.19 = ali_usb\n";
-	os << "  {\n";
-	os << "  }\n";
+	if (usb_q.getAnswer() == "true")
+	{
+		os << "  pci0.19 = ali_usb\n";
+		os << "  {\n";
+		os << "  }\n";
+	}
+
+	if (pmu_q.getAnswer() == "true")
+	{
+		os << "  pci0.17 = ali_pmu\n";
+		os << "  {\n";
+		os << "  }\n";
+	}
 
 	os << "}\n";
 
