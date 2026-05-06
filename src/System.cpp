@@ -1171,11 +1171,11 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 			}
 		}
 
-		if (a >= U64(0x800000c0000) && a < U64(0x801000e0000))
+		if (a >= U64(0x800000a0000) && a < U64(0x801000e0000))
 		{
 
 			// Unused PCI ROM BIOS space
-			return 0;
+			return (dsize >= 64) ? U64(0xffffffffffffffff) : (U64(1) << dsize) - 1;
 		}
 
 		if (a >= U64(0x801fc000000) && a < U64(0x801fe000000))
@@ -1221,13 +1221,7 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 						a & U64(0xffffffff));
 			}
 
-			switch (dsize)
-			{
-			    case 8:   return 0xff;
-			    case 16:  return 0xffff;
-			    case 32:  return 0xffffffff;
-			    default:  return U64(0xffffffffffffffff);
-			}
+			return (dsize >= 64) ? U64(0xffffffffffffffff) : (U64(1) << dsize) - 1;
 		}
 
 		if (a >= U64(0x80200000000) && a < U64(0x80300000000))
@@ -1243,13 +1237,7 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 				printf("Read from unknown memory %" PRIx64 " on PCI 1   \n",
 					a & U64(0xffffffff));
 
-			switch (dsize)
-			{
-			    case 8:   return 0xff;
-			    case 16:  return 0xffff;
-			    case 32:  return 0xffffffff;
-			    default:  return U64(0xffffffffffffffff);
-			}
+			return (dsize >= 64) ? U64(0xffffffffffffffff) : (U64(1) << dsize) - 1;
 		}
 
 #if defined(DEBUG_UNKMEM)
