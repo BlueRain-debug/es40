@@ -85,6 +85,7 @@ public:
   virtual       ~CFlash();
   virtual int   SaveState(FILE* f);
   virtual int   RestoreState(FILE* f);
+  virtual void  check_state();
   void          SaveStateF();
   void          RestoreStateF();
   void          SaveStateF(char* fn);
@@ -96,7 +97,8 @@ public:
   void FlushIfDirty();
 
 protected:
-  bool dirty;
+  bool   dirty       = false;
+  time_t last_dirty  = 0;   // wall-clock when dirty was last (re)set
 
   struct SFlash_state
   {

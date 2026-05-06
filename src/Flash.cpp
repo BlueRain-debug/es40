@@ -166,6 +166,17 @@ void CFlash::FlushIfDirty()
 }
 
 /**
+ * Flush the dirty buffer once writes have been quiet for a couple seconds.
+ **/
+void CFlash::check_state()
+{
+	const time_t QUIESCE_SECS = 2;
+	if (!dirty) return;
+	if (time(nullptr) - last_dirty < QUIESCE_SECS) return;
+	FlushIfDirty();
+}
+
+/**
  * Read a byte from flashmemory.
  * Normally, this returns one byte from flash, however, after some commands
  * sent to the flash-rom, this returns identification or status information.
@@ -301,6 +312,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 		{
 			state.Flash[a] = newv;
 			dirty = true;
+			last_dirty = time(nullptr);
 			printf("%%SRM-I-FLASH: Wrote data: 0x%02X to sector address: 0x%04X\n", byte, a);
 		}
 
@@ -424,6 +436,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 			printf("%%SRM-I-FLASH: Erasing flash chip\n");
 			memset(state.Flash, 0xff, sizeof(state.Flash));
 			dirty = true;
+			last_dirty = time(nullptr);
 			state.mode = MODE_CONFIRM_1;
 			return;
 		}
@@ -435,6 +448,7 @@ void CFlash::WriteMem(int index, u64 address, int dsize, u64 data)
 			const int sector_start = a & ~0xFFFF;
 			memset(&state.Flash[sector_start], 0xFF, 0x10000);
 			dirty = true;
+			last_dirty = time(nullptr);
 			state.mode = MODE_CONFIRM_1;
 			return;
 		}
