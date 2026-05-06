@@ -3951,7 +3951,11 @@ void CS3Trio64::legacy_write(u32 address, int dsize, u32 data)
  */
 u32 CS3Trio64::rom_read(u32 address, int dsize)
 {
-	u32   data = 0x00;
+    if (!(config_read(0, 0x30, 4) & 0x01)) 
+    {
+        return 0xffffffff;
+    }
+	u32   data = 0xffffffff;
 	u8* x = (u8*)option_rom;
 	if (address <= rom_max)
 	{
