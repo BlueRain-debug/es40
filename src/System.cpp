@@ -1174,25 +1174,37 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 		if (a >= U64(0x800000c0000) && a < U64(0x801000e0000))
 		{
 
-			// Unused PCI ROM BIOS space
-			return 0;
+			// Unused PCI ROM BIOS space — return all-ones (PCI master abort)
+			switch (dsize)
+			{
+			case 8:   return X64_BYTE;
+			case 16:  return X64_WORD;
+			case 32:  return X64_LONG;
+			case 64:  return X64_QUAD;
+			}
 		}
 
 		if (a >= U64(0x801fc000000) && a < U64(0x801fe000000))
 		{
 
-			// Unused PCI I/O space
+			// Unused PCI I/O space — return all-ones (PCI master abort)
 			//if (source)
 			//  printf("Read from unknown IO port %" PRIx64 " on PCI 0 from %s   \n",a & U64(0x1ffffff),source->devid_string);
 			//else
 			//  printf("Read from unknown IO port %" PRIx64 " on PCI 0   \n",a & U64(0x1ffffff));
-			return 0;
+			switch (dsize)
+			{
+			case 8:   return X64_BYTE;
+			case 16:  return X64_WORD;
+			case 32:  return X64_LONG;
+			case 64:  return X64_QUAD;
+			}
 		}
 
 		if (a >= U64(0x803fc000000) && a < U64(0x803fe000000))
 		{
 
-			// Unused PCI I/O space
+			// Unused PCI I/O space — return all-ones (PCI master abort)
 			if (source)
 			{
 				printf("Read from unknown IO port %" PRIx64 " on PCI 1 from %s   \n",
@@ -1201,13 +1213,19 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 			else
 				printf("Read from unknown IO port %" PRIx64 " on PCI 1   \n",
 					a & U64(0x1ffffff));
-			return 0;
+			switch (dsize)
+			{
+			case 8:   return X64_BYTE;
+			case 16:  return X64_WORD;
+			case 32:  return X64_LONG;
+			case 64:  return X64_QUAD;
+			}
 		}
 
 		if (a >= U64(0x80000000000) && a < U64(0x80100000000))
 		{
 
-			// Unused PCI memory space
+			// Unused PCI memory space — return all-ones (PCI master abort)
 			u64 paddr = a & U64(0xffffffff);
 			if (paddr > 0xb8fff || paddr < 0xb8000)
 			{ // skip legacy video
@@ -1221,13 +1239,19 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 						a & U64(0xffffffff));
 			}
 
-			return 0;
+			switch (dsize)
+			{
+			case 8:   return X64_BYTE;
+			case 16:  return X64_WORD;
+			case 32:  return X64_LONG;
+			case 64:  return X64_QUAD;
+			}
 		}
 
 		if (a >= U64(0x80200000000) && a < U64(0x80300000000))
 		{
 
-			// Unused PCI memory space
+			// Unused PCI memory space — return all-ones (PCI master abort)
 			if (source)
 			{
 				printf("Read from unknown memory %" PRIx64 " on PCI 1 from %s   \n",
@@ -1236,7 +1260,13 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 			else
 				printf("Read from unknown memory %" PRIx64 " on PCI 1   \n",
 					a & U64(0xffffffff));
-			return 0;
+			switch (dsize)
+			{
+			case 8:   return X64_BYTE;
+			case 16:  return X64_WORD;
+			case 32:  return X64_LONG;
+			case 64:  return X64_QUAD;
+			}
 		}
 
 #if defined(DEBUG_UNKMEM)
