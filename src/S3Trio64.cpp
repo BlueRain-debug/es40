@@ -3895,7 +3895,7 @@ u32 CS3Trio64::legacy_read(u32 address, int dsize)
 		}
 	}
 
-	u32 data = 0;
+	u32 data = 0xffffffff;
 	switch (dsize)
 	{
 	case 32:
