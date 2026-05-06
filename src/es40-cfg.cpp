@@ -305,7 +305,27 @@ int main(int argc, char* argv[])
 	printf("We are now going to set up an initial configuration file for the Emulator.\n");
 	printf("This file will be saved as es40.cfg in the current directory.\n\n");
 	printf("For more detailed information to the current question, answer '?'.\n");
-
+	
+	/* Check if es40.cfg already exists.
+	 */
+	ifstream check_file("es40.cfg");
+	if (check_file.is_open())
+	{
+		check_file.close();
+		MultipleChoiceQuestion overwrite_q;
+		overwrite_q.setQuestion("The file es40.cfg already exists. Do you want to overwrite it?");
+		overwrite_q.setExplanation("If you answer 'no', the program will exit without overwriting the existing file.");
+		overwrite_q.addAnswer("no", "no", "Keep the existing file and exit.");
+		overwrite_q.addAnswer("yes", "yes", "Overwrite the existing configuration file.");
+		overwrite_q.setDefault("no");
+		
+		if (overwrite_q.ask() == "no")
+		{
+			printf("Exiting without changing es40.cfg.\n");
+			return 0;
+		}
+	}
+	
 	/* Open es40.cfg for writing.
 	 */
 	filebuf fb;
