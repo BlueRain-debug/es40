@@ -1221,7 +1221,13 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 						a & U64(0xffffffff));
 			}
 
-			return 0;
+			switch (dsize)
+			{
+			    case 8:   return 0xff;
+			    case 16:  return 0xffff;
+			    case 32:  return 0xffffffff;
+			    default:  return U64(0xffffffffffffffff);
+			}
 		}
 
 		if (a >= U64(0x80200000000) && a < U64(0x80300000000))
@@ -1236,7 +1242,14 @@ u64 CSystem::ReadMem(u64 address, int dsize, CSystemComponent* source)
 			else
 				printf("Read from unknown memory %" PRIx64 " on PCI 1   \n",
 					a & U64(0xffffffff));
-			return 0;
+
+			switch (dsize)
+			{
+			    case 8:   return 0xff;
+			    case 16:  return 0xffff;
+			    case 32:  return 0xffffffff;
+			    default:  return U64(0xffffffffffffffff);
+			}
 		}
 
 #if defined(DEBUG_UNKMEM)
