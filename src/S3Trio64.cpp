@@ -2942,6 +2942,9 @@ CS3Trio64::~CS3Trio64()
  **/
 u32 CS3Trio64::ReadMem_Legacy(int index, u32 address, int dsize)
 {
+	if ((index == 4 || index == 5) && !pci_mem_enable) {
+		return 0xffffffff;
+	}
 	u32 data = 0;
 	switch (index)
 	{
