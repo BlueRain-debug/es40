@@ -1096,7 +1096,7 @@ uint8_t CVGA::mem_r(offs_t offset)
 	{
 		uint8_t i, data;
 
-		data = 0;
+		data = 0xff;
 		//printf("%08x\n",offset);
 
 		for (i = 0; i < 4; i++)
