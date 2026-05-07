@@ -479,18 +479,6 @@ int main(int argc, char* argv[])
 
 	os << "  rom.srm = \"" << rom_q.ask() << "\";\n";
 
-	rom_q.setQuestion("Where should the decompressed ROM image be saved?");
-	rom_q.setExplanation("This file will be created the first time the emulator runs.");
-#if defined(_WIN32)
-	rom_q.setDefault("rom\\decompressed.rom");
-#elif defined(__VMS)
-	rom_q.setDefault("[.ROM]DECOMPRESSED.ROM");
-#else
-	rom_q.setDefault("rom/decompressed.rom");
-#endif
-
-	os << "  rom.decompressed = \"" << rom_q.ask() << "\";\n";
-
 	rom_q.setQuestion("Where should the Flash ROM image be saved?");
 #if defined(_WIN32)
 	rom_q.setDefault("rom\\flash.rom");
