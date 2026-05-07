@@ -1168,7 +1168,7 @@ void CAliM1543C::toy_write(u32 address, u8 data)
 				state.toy_stored_data[6] = (u8)(stime.tm_wday + 1);
 				state.toy_stored_data[7] = (u8)(stime.tm_mday);
 				state.toy_stored_data[8] = (u8)(stime.tm_mon + 1);
-				state.toy_stored_data[9] = (u8)(stime.tm_year % 100);
+				state.toy_stored_data[9] = (u8)(stime.tm_year - 80); // ARC TOY year is offset from 1980
 			}
 			else
 			{
@@ -1190,7 +1190,7 @@ void CAliM1543C::toy_write(u32 address, u8 data)
 				state.toy_stored_data[6] = (u8)(stime.tm_wday + 1);
 				state.toy_stored_data[7] = (u8)(((stime.tm_mday / 10) << 4) | (stime.tm_mday % 10));
 				state.toy_stored_data[8] = (u8)((((stime.tm_mon + 1) / 10) << 4) | ((stime.tm_mon + 1) % 10));
-				state.toy_stored_data[9] = (u8)((((stime.tm_year % 100) / 10) << 4) | ((stime.tm_year % 100) % 10));
+				state.toy_stored_data[9] = (u8)((((stime.tm_year - 80) / 10) << 4) | ((stime.tm_year - 80) % 10)); // ARC TOY year is offset from 1980
 			}
 
 			// Debian Linux wants something out of 0x0a.  It gets initialized
@@ -1335,8 +1335,7 @@ void CAliM1543C::toy_write(u32 address, u8 data)
 			st.tm_hour = binary ? hh : unbcd(hh);
 			st.tm_mday = binary ? dd : unbcd(dd);
 			st.tm_mon  = (binary ? mo : unbcd(mo)) - 1;
-			st.tm_year = binary ? yy : unbcd(yy);
-			if (st.tm_year < 70) st.tm_year += 100;   // 20XX pivot
+			st.tm_year = (binary ? yy : unbcd(yy)) + 80;   // ARC TOY year is offset from 1980
 
 			if (!h24 &&  pm && st.tm_hour < 12) st.tm_hour += 12;
 			if (!h24 && !pm && st.tm_hour == 12) st.tm_hour = 0;
