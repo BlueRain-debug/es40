@@ -123,7 +123,9 @@ private:
 	CConfigurator* myCfg;
 	unsigned int   vid_scale = 0;
 	bool           vid_linear = true;
+	bool           vid_scale_change_enable = false;
 	void           reset_window_size();
+	void           adjust_window_scale(int delta);
 };
 
 // declare one instance of the gui object and call macro to insert the
@@ -144,6 +146,9 @@ int                 sdl_grab = 0;
 unsigned            res_x = 0, res_y = 0;
 unsigned            half_res_x, half_res_y;
 static int          last_driven_w = 0, last_driven_h = 0;
+static int          runtime_scale_override = 0;  // 0 = inactive; >0 = use this integer scale
+static const int    runtime_scale_min = 1;
+static const int    runtime_scale_max = 8;
 u8                  old_mousebuttons = 0, new_mousebuttons = 0;
 int                 old_mousex = 0, new_mousex = 0;
 int                 old_mousey = 0, new_mousey = 0;
@@ -151,6 +156,8 @@ static int          sdl_mouse_button_state = 0;
 static bool         sdl_swallow_keys = false;
 static bool         sdl_swallow_end_release = false;
 static bool         sdl_swallow_home_release = false;
+static bool         sdl_swallow_pageup_release = false;
+static bool         sdl_swallow_pagedown_release = false;
 static const char*  sdl_title = "ES40 Emulator - Ctrl+Alt+End sends Ctrl+Alt+Del - Ctrl+Alt+Home resets window";
 static const char*  sdl_title_grabbed = "ES40 Emulator - Ctrl+F10 releases mouse - Ctrl+Alt+End sends Ctrl+Alt+Del - Ctrl+Alt+Home resets window";
 
@@ -181,6 +188,7 @@ void bx_sdl_gui_c::specific_init(unsigned x_tilesize, unsigned y_tilesize)
 
 	this->vid_linear = myCfg->get_bool_value("video.linear", true);
 	this->vid_scale = (int)myCfg->get_num_value("video.scale_ratio", true, 0);
+	this->vid_scale_change_enable = myCfg->get_bool_value("video.scale_change_enable", false);
 
 	new_gfx_api = 1;
 }
@@ -454,6 +462,25 @@ void bx_sdl_gui_c::handle_events(void)
 				break;
 			}
 
+			// Ctrl+PageUp / Ctrl+PageDown: runtime scale adjust (gated by config)
+			if (vid_scale_change_enable &&
+				(sdl_event.key.mod & SDL_KMOD_CTRL) &&
+				!(sdl_event.key.mod & SDL_KMOD_ALT))
+			{
+				if (sdl_event.key.key == SDLK_PAGEUP)
+				{
+					adjust_window_scale(+1);
+					sdl_swallow_pageup_release = true;
+					break;
+				}
+				if (sdl_event.key.key == SDLK_PAGEDOWN)
+				{
+					adjust_window_scale(-1);
+					sdl_swallow_pagedown_release = true;
+					break;
+				}
+			}
+
 			// Ctrl+F10: toggle mouse capture
 			if (sdl_event.key.key == SDLK_F10 && (sdl_event.key.mod & SDL_KMOD_CTRL))
 			{
@@ -514,6 +541,18 @@ void bx_sdl_gui_c::handle_events(void)
 			if (sdl_swallow_home_release && sdl_event.key.key == SDLK_HOME)
 			{
 				sdl_swallow_home_release = false;
+				break;
+			}
+
+			if (sdl_swallow_pageup_release && sdl_event.key.key == SDLK_PAGEUP)
+			{
+				sdl_swallow_pageup_release = false;
+				break;
+			}
+
+			if (sdl_swallow_pagedown_release && sdl_event.key.key == SDLK_PAGEDOWN)
+			{
+				sdl_swallow_pagedown_release = false;
 				break;
 			}
 
@@ -609,10 +648,12 @@ void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
 	else
 		display = SDL_GetDisplayForWindow(sdl_window);
 
-	if (!vid_scale)
-		content_scale = SDL_GetDisplayContentScale(display);
-	else
+	if (runtime_scale_override > 0)
+		content_scale = (float)runtime_scale_override;
+	else if (vid_scale)
 		content_scale = (float)vid_scale;
+	else
+		content_scale = SDL_GetDisplayContentScale(display);
 
 	scaled_x = x * content_scale;
 	scaled_y = y * content_scale;
@@ -680,6 +721,35 @@ void bx_sdl_gui_c::reset_window_size()
 		SDL_RestoreWindow(sdl_window);
 
 	SDL_SetWindowSize(sdl_window, last_driven_w, last_driven_h);
+}
+
+void bx_sdl_gui_c::adjust_window_scale(int delta)
+{
+	// Snapshot the currently-effective integer scale.
+	int current;
+	if (runtime_scale_override > 0)
+		current = runtime_scale_override;
+	else if (vid_scale)
+		current = (int)vid_scale;
+	else if (sdl_window)
+		current = (int)(SDL_GetDisplayContentScale(SDL_GetDisplayForWindow(sdl_window)) + 0.5f);
+	else
+		current = 1;
+
+	int next = current + delta;
+	if (next < runtime_scale_min) next = runtime_scale_min;
+	if (next > runtime_scale_max) next = runtime_scale_max;
+	if (next == runtime_scale_override) return;  // no change
+
+	runtime_scale_override = next;
+
+	if (sdl_window && res_x > 0 && res_y > 0)
+	{
+		SDL_WindowFlags flags = SDL_GetWindowFlags(sdl_window);
+		if (flags & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN))
+			SDL_RestoreWindow(sdl_window);
+		dimension_update(res_x, res_y);
+	}
 }
 
 void bx_sdl_gui_c::mouse_enabled_changed_specific(bool val)

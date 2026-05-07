@@ -404,7 +404,23 @@ int main(int argc, char* argv[])
 		vid_linear_q.setDefault("bilinear");
 
 		os << "  video.linear = " << vid_linear_q.ask() << ";\n";
-		
+
+		MultipleChoiceQuestion vid_scale_change_enable_q;
+		vid_scale_change_enable_q.setQuestion("Enable runtime display scale changes via hotkeys?");
+		vid_scale_change_enable_q.setExplanation(
+			"If enabled, the display scale ratio can be adjusted on the fly "
+			"while the emulator is running, without restarting. The change is "
+			"not persisted back to this config file.\n"
+			"Currently the assigned keys are fixed:\n"
+			"  Ctrl+PageUp   - increase scale by 1 (clamped at 8x)\n"
+			"  Ctrl+PageDown - decrease scale by 1 (clamped at 1x)\n"
+			"These key assignments may become user-configurable in the future.");
+		vid_scale_change_enable_q.addAnswer("no", "false", "Disable runtime scale change hotkeys.");
+		vid_scale_change_enable_q.addAnswer("yes", "true", "Enable Ctrl+PageUp / Ctrl+PageDown to adjust scaling at runtime.");
+		vid_scale_change_enable_q.setDefault("no");
+
+		os << "  video.scale_change_enable = " << vid_scale_change_enable_q.ask() << ";\n";
+
 		os << "}\n\n";
 	}
 
