@@ -436,6 +436,11 @@ private:
   u64                                   cc_per_instruction;
   u64                                   cpu_hz;
 
+  // Wall-clock-paced Cchip interval timer (b_irq<2>).  CPU 0 fires once
+  // per period as it passes batch-flush boundaries.  Avoids cross-thread
+  // edge coalescing seen with AliM1543C-thread firing.
+  std::chrono::steady_clock::time_point next_timer_fire;
+
   // DRAM fast-path cache 
   char* dram_ptr;    // cSystem->PtrToMem(0) - host pointer to base es40 ram array thingy
   u64    dram_size;   // 1ULL << cSystem->get_memory_bits() — size of DRAM in bytes

@@ -1532,43 +1532,21 @@ void CAliM1543C::do_pit_clock()
 		pit_counter = 0;
 		pit_clock();
 	}
-
-	// MC146818 SQW output -> Cchip i_intim_l -> b_irq<2>.  Wall-clock-driven
-	// to decouple guest timer rate from emulated CPU throughput. 
-	do_interval_timer();
 }
 
-/**
- * Fire the Cchip interval timer (b_irq<2>) at the rate programmed in
- * MC146818 register A.  
- *
- * Called from do_pit_clock() at the AliM1543C thread's ~1 ms cadence.
- **/
-void CAliM1543C::do_interval_timer()
+u64 CAliM1543C::get_interval_period_ns() const
 {
 	const u8 reg_a = state.toy_stored_data[0x0a];
 	const int rate_pow = reg_a & 0x0f;
 	if (rate_pow == 0)
-		return;
+		return 0;
 
-	// Period select: with 32 KHz base (bit 5), the table differs at the
-	// short end of the divisor.  Matches the existing periodic-flag math.
-	double period = (1ULL << rate_pow) / 65536.0;
 	if (reg_a & 0x20)
 	{
-		if (rate_pow == 0x1)      period = 1.0 / 256.0;
-		else if (rate_pow == 0x2) period = 1.0 / 128.0;
+		if (rate_pow == 0x1) return 1000000000ull / 256;
+		if (rate_pow == 0x2) return 1000000000ull / 128;
 	}
-
-	using clk = std::chrono::steady_clock;
-	static auto last_fire = clk::now();
-	const auto now = clk::now();
-	const double elapsed = std::chrono::duration<double>(now - last_fire).count();
-	if (elapsed >= period)
-	{
-		cSystem->interrupt(-1, true); // sets MISC<ITINTR>, asserts b_irq<2>
-		last_fire = now;
-	}
+	return ((1ull << rate_pow) * 1000000000ull) / 65536ull;
 }
 
 // 8259 PIC

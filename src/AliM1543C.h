@@ -197,9 +197,11 @@ private:
   void      pit_write(u32 address, u8 data);
   void      pit_clock();
 
-  // MC146818 SQW output -> Cchip i_intim_l -> b_irq<2>.  Wall-clock-driven
-  // at the rate programmed in TOY register A (default 1024 Hz).
-  void      do_interval_timer();
+public:
+  // Period in ns of the MC146818 SQW output (rate from TOY reg A).
+  // CPU thread reads this every batch boundary to pace b_irq<2>.
+  u64       get_interval_period_ns() const;
+private:
 
   // interrupt controller
   u8        pic_read(int index, u32 address);
