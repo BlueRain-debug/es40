@@ -1995,7 +1995,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 			{
 				// HRM 5.1.3: VA is NOT written for LD_VPTE misses
 				state.va_form_va = virt;
-				state.exc_sum = (u64)REG_1 << 8;
+				state.exc_sum = ((u64)REG_1 & 0x1f) << 8;  /* HRM 5.2.13: EXC_SUM REG[12:8] is 5 bits */
 				/*
 				 * I_CTL[VA_48] selects the DTB double-miss PAL entry.
 				 * state.i_ctl_va_mode packs bits [16:15] of I_CTL, so bit 0
@@ -2011,7 +2011,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 			{
 				state.fault_va = virt;
 				state.va_form_va = virt;
-				state.exc_sum = (u64)REG_1 << 8;
+				state.exc_sum = ((u64)REG_1 & 0x1f) << 8;  /* HRM 5.2.13: EXC_SUM REG[12:8] is 5 bits */
 
 				u32 opcode = I_GETOP(ins);
 				state.mm_stat =
@@ -2060,7 +2060,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 			else
 			{
 				state.fault_va = virt;
-				state.exc_sum = (u64)REG_1 << 8;
+				state.exc_sum = ((u64)REG_1 & 0x1f) << 8;  /* HRM 5.2.13: EXC_SUM REG[12:8] is 5 bits */
 
 				u32 opcode = I_GETOP(ins);
 				state.mm_stat =
@@ -2129,7 +2129,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 				// Handle D-stream access violation
 				state.exc_addr = state.current_pc;
 				state.fault_va = virt;
-				state.exc_sum = (u64)REG_1 << 8;
+				state.exc_sum = ((u64)REG_1 & 0x1f) << 8;  /* HRM 5.2.13: EXC_SUM REG[12:8] is 5 bits */
 
 				u32 opcode = I_GETOP(ins);
 				state.mm_stat =
@@ -2186,7 +2186,7 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 				// handle D-stream access fault
 				state.exc_addr = state.current_pc;
 				state.fault_va = virt;
-				state.exc_sum = (u64)REG_1 << 8;
+				state.exc_sum = ((u64)REG_1 & 0x1f) << 8;  /* HRM 5.2.13: EXC_SUM REG[12:8] is 5 bits */
 
 				u32 opcode = I_GETOP(ins);
 				state.mm_stat =
@@ -2316,6 +2316,9 @@ void CAlphaCPU::add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags)
 	state.tb[t][i].asn = asn;
 	state.tb[t][i].valid = true;
 	state.last_found_tb[t][rw] = i;
+
+	if (t == 0)
+		flush_data_page_cache();
 
 #if defined(DEBUG_TB_)
 #if defined(IDB)
