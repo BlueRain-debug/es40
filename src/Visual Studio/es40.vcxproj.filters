@@ -457,6 +457,9 @@
     <None Include="..\..\m4\x11.m4">
       <Filter>Resource Files\m4</Filter>
     </None>
+    <None Include="..\es40.cfg">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="..\..\old_vga_docs.txt">
