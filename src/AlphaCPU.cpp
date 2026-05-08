@@ -2425,7 +2425,8 @@ void CAlphaCPU::tbiap(int flags)
 	int t = (flags & ACCESS_EXEC) ? 1 : 0;
 	int i;
 	for (i = 0; i < TB_ENTRIES; i++)
-		state.tb[t][i].valid = false;
+		if (!state.tb[t][i].asm_bit)
+			state.tb[t][i].valid = false;
 
 	if (t == 0) flush_data_page_cache();
 }
