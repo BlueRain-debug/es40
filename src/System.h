@@ -288,6 +288,7 @@ private:
   void          ResetChipsetState();
   std::atomic<bool> m_reset_requested{ false };
   std::atomic<bool> m_reset_in_progress{ false };
+  std::atomic<bool> m_reported_3c509_probe{ false };
   u64           cchip_csr_read(u32 address, CSystemComponent* source);
   void          cchip_csr_write(u32 address, u64 data, CSystemComponent* source);
   u64           pchip_csr_read(int num, u32 address);
