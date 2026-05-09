@@ -4067,9 +4067,9 @@ u32 CS3Trio64::io_read(u32 address, int dsize)
 			}
 		}
 	}
-
+	
 	if (dsize != 8)
-		FAILURE(InvalidArgument, "Unsupported dsize");
+		printf("BUGBUG: S3 io read: %" PRIx64 ", %d, %" PRIx64 "\n", address, dsize,data);
 
 
 	switch (address)
