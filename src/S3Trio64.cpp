@@ -4015,6 +4015,8 @@ u32 CS3Trio64::rom_read(u32 address, int dsize)
 	if (address <= rom_max)
 	{
 		x += address;
+		if(dsize != 8 && dsize != 16 && dsize != 32)
+			printf("BUGBUG: S3 rom read: %" PRIx64 ", %d, %" PRIx64 "\n", address, dsize,data);
 		switch (dsize)
 		{
 		case 8:   data = (u32)endian_8((*((u8*)x)) & 0xff); break;
