@@ -4,25 +4,23 @@ es40 is free software. Please see the file COPYING for details.
 For documentation, please see the files in the doc subdirectory.  
 For building and installation instructions please see below.  
   
-Windows build - VS2026 x64 target is the main development environment.  
-Requires npcap (old legacy winpcap saw its last release in 2013)    
+Windows 11 with VS2026 and X64 builds only is the main development environment.  
+Requires npcap for networking. Use "NN" builds if you do not need networking.  
   
-Formerly used poco c++ libraries, but they were copied into the source tree  
-directly,  perhaps we can update these at some point?  
-
 Latest VC redist may be required to run binaries, available here:  
 https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist  
 Latest 2017-2026 x64 redistributable is recommended. At minimum the version  
-matching your build toolchain is needed. Binary release builds provided here   
-are done with the v145 / VS2026 toolchain. Matching version is available in  
-VS build directory.  
+matching your build toolchain is needed.   
 
-# Live shot of X11 running on emulated S3 via SDL display! 
-
-![Screenshot](https://github.com/gdwnldsKSC/es40/blob/main/screenshots/OpenVMS.png?raw=true)
-
-------------------------------------------------------------------------
-
+# Please use es40-cfg to generate a config the first time you use it to ensure  
+# you do not omit any required devices from the chipset.  
+  
+# Live shot of X11 running on emulated S3 via SDL display!  
+  
+![Screenshot](https://github.com/gdwnldsKSC/es40/blob/main/screenshots/OpenVMS.png?raw=true)  
+  
+------------------------------------------------------------------------  
+  
 ## Status  
   
 ## 5/8/26 - TOY clock issue - SOUND SUPPORT! ES1370 Audio device! 
