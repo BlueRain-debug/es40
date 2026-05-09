@@ -545,9 +545,15 @@ inline u64 fsqrt64(u64 asig, s32 exp)
         page_mask = state.tb[tb_t][tb_i].keep_mask;                              \
       if((a1 ^ a2) & ~page_mask)                                                 \
       {                                                                          \
-        state.fault_va = addr;                                                   \
+        u32 _ua_opcode = I_GETOP(ins);                                           \
+        state.fault_va = (addr);                                                 \
+        state.va_form_va = (addr);                                               \
         state.exc_sum = ((REG_1 & 0x1f) << 8);                                   \
-        state.mm_stat = (I_GETOP(ins) << 4) | ((flags & ACCESS_WRITE) ? 1 : 0);  \
+        state.mm_stat =                                                          \
+          ((_ua_opcode == 0x1b || _ua_opcode == 0x1f) ? _ua_opcode - 0x18        \
+                                                      : _ua_opcode) << 4         \
+          | ((flags & ACCESS_WRITE) ? 1 : 0)                                     \
+          | 2;  /* ACV (matches brokenpipe AlphaFault_Alignment -> accvio) */    \
         TRACE_UNALIGN(flags, align);                                             \
         GO_PAL(UNALIGN);                                                         \
         ES40_EXECUTE_END();                                                      \

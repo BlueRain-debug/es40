@@ -1918,7 +1918,20 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 
 	int   spe = (flags & ACCESS_EXEC) ? state.i_ctl_spe : state.m_ctl_spe;
 	int   asn = (flags & ACCESS_EXEC) ? state.asn : state.asn0;
-	int   cm = (flags & ALT) ? state.alt_cm : state.cm;
+	/*
+	 * Access-check current mode selection.
+	 *  - VPTE (HRM 6.4.1 Table 6-3): Virtual/VPTE accesses are LD_VPTE
+	 *    page-table fetches and use *kernel mode* for permission checks
+	 *    regardless of executing CM. 
+	 *  - ALT (HRM 6.4.1 Table 6-3 row 1102, Table 6-4 row 1102): the
+	 *    /alt variants use DTB_ALT_MODE for permission checks.
+	 *  - Otherwise: current mode.
+	 * Order matters: VPTE wins over ALT (VPTE is never combined with ALT in
+	 * any valid HW_LD encoding, but the precedence is clear).
+	 */
+	int   cm = (flags & VPTE) ? 0 :
+	           (flags & ALT)  ? state.alt_cm :
+	                            state.cm;
 	bool  forreal = !(flags & FAKE);
 
 #if defined IDB

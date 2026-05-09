@@ -405,26 +405,27 @@
     phys_address = state.r[REG_2] + DISP_12;                                  \
     state.r[REG_1] = READ_PHYS_NT(32);                                        \
     break;                                                                    \
-                                                                           \
+                                                                              \
   case 2:       /* longword physical locked */                                \
     phys_address = state.r[REG_2] + DISP_12;                                  \
     cSystem->cpu_lock(state.iProcNum, phys_address);                          \
     state.r[REG_1] = READ_PHYS_NT(32);                                        \
     break;                                                                    \
-                                                                           \
-  case 4:       /* longword virtual vpte                 chk   alt    vpte */ \
-    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_READ | NO_CHECK | VPTE);    \
+                                                                              \
+  case 4:       /* longword virtual VPTE (HRM 6.4.1 TYPE 0102: LD_VPTE) --    \
+                 * page-table-entry fetch; access checked against KERNEL      \
+                 * mode regardless of executing CM. virt2phys forces cm=0     \
+                 * when the VPTE flag is set. */                              \
+    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_READ | VPTE);               \
     state.r[REG_1] = READ_PHYS_NT(32);                                        \
     break;                                                                    \
-                                                                           \
-  case 8:       /* longword virtual (HRM 6.4.1 TYPE 1002) -- access checked  \
-                 * against current mode, matching QEMU brokenpipe              \
-                 * AlphaMMUIdx_Privileged (was incorrectly bypassed via        \
-                 * NO_CHECK). */                                               \
+                                                                              \
+  case 8:       /* longword virtual (HRM 6.4.1 TYPE 1002) -- access checked   \
+                 * against current mode */                                    \
     DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_READ);                      \
     state.r[REG_1] = READ_PHYS_NT(32);                                        \
     break;                                                                    \
-                                                                           \
+                                                                              \
   case 10:      /* longword virtual check (HRM 6.4.1 TYPE 1012: WrChk) */     \
     DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_READ | WRCHK);              \
     state.r[REG_1] = READ_PHYS_NT(32);                                        \
@@ -460,8 +461,9 @@
     state.r[REG_1] = READ_PHYS_NT(64);                                        \
     break;                                                                    \
                                                                            \
-  case 5:       /* quadword virtual vpte                 chk   alt    vpte */ \
-    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_READ | NO_CHECK | VPTE);    \
+  case 5:       /* quadword virtual VPTE (HRM 6.4.1 TYPE 0102: LD_VPTE) --   \
+                 * see HW_LDL case 4 for full notes. */                        \
+    DATA_PHYS_NT(state.r[REG_2] + DISP_12, ACCESS_READ | VPTE);               \
     state.r[REG_1] = READ_PHYS_NT(64);                                        \
     break;                                                                    \
                                                                            \
