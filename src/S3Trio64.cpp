@@ -2554,6 +2554,7 @@ void CS3Trio64::init()
 	s3.id_cr30 = 0xE1; // Chip ID/REV register CR30, dosbox-x implementation returns 0x00 for our use case. poweron default is E1H however.
 	m_crtc_map.write_byte(0x32, 0x00); // Locked by default
 	m_crtc_map.write_byte(0x33, 0x00); // CR33 (Backward Compatibility 2) default 00h (no locks).
+	m_crtc_map.write_byte(0x39, 0xA5); // Unlock CR36 and CR37
 	m_crtc_map.write_byte(0x36, s3_cr36_from_memsize(vga.svga_intf.vram_size, true)); // Configuration 2 Register (CONFG_REG1) (CR36) - bootstrap config
 	m_crtc_map.write_byte(0x37, 0xE5); // Configuration 2 Register (CONFG_REG2) (CR37)  - bootstrap read, sane value from 86box
 	m_crtc_map.write_byte(0x3B, 0x00); // CR3B: Data Transfer Position (DTPC)
