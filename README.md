@@ -12,8 +12,7 @@ https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist
 Latest 2017-2026 x64 redistributable is recommended. At minimum the version  
 matching your build toolchain is needed.   
 
-# Please use es40-cfg to generate a config the first time you use it to ensure  
-# you do not omit any required devices from the chipset.  
+# Please use es40-cfg to generate a config the first time you use it to ensure you do not omit any required devices from the chipset.  
   
 # Live shot of X11 running on emulated S3 via SDL display!  
   

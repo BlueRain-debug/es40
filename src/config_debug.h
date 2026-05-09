@@ -69,14 +69,14 @@
 // Define to 1 if you want to enable Floating Point load/store debugging
 #undef DEBUG_FP_LOADSTORE
 
-// Define to 1 if you want to enable General NIC debugging
+// Define to if you want to enable General NIC debugging
 //#define DEBUG_NIC
 
-// Define to 1 if you want to enable NIC Filter debugging
-#undef DEBUG_NIC_FILTER
+// Define to if you want to enable NIC Filter debugging
+//#define DEBUG_NIC_FILTER
 
-// Define to 1 if you want to enable NIC Serial ROM debugging
-#undef DEBUG_NIC_SROM
+// Define to if you want to enable NIC Serial ROM debugging
+//#define DEBUG_NIC_SROM
 
 // Define if you want to enable unknown memory access debugging
 //#define DEBUG_UNKMEM

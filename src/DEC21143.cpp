@@ -686,6 +686,12 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 		break;
 
 	case CSR_OPMODE:        /*  csr6:  */
+		/* MBO (bit 25) is hardware-driven on real silicon and always reads
+		 * back as 1, regardless of what the driver wrote (HRM 3.2.2.6,
+		 * Table 3-42). Force it set in the stored value so a write/read-back
+		 * verify by the driver (e.g. AlphaBIOS adapter self-test) succeeds
+		 * even when the write omitted MBO. */
+		state.reg[regnr] |= 0x02000000;
 		if (data & 0x02000000)
 		{
 
