@@ -795,6 +795,7 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 					SIASTAT_LPN |
 					SIASTAT_LPC
 					);
+			state.reg[CSR_SIASTAT / 8] &= ~(SIASTAT_LS100 | SIASTAT_LS10);  /* link UP on both speeds */
 			state.reg[CSR_STATUS / 8] |= STATUS_LNPANC;
 			state.reg[CSR_SIATXRX / 8] &= ~(SIATXRX_TH | SIATXRX_THX | SIATXRX_T4);
 			state.reg[CSR_SIATXRX / 8] |= SIATXRX_TXF;
@@ -822,6 +823,7 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 					SIASTAT_LPN |
 					SIASTAT_LPC
 					);
+			state.reg[CSR_SIASTAT / 8] &= ~(SIASTAT_LS100 | SIASTAT_LS10);  /* link UP on both speeds */
 			state.reg[CSR_STATUS / 8] |= STATUS_LNPANC;
 			state.reg[CSR_SIATXRX / 8] &= ~(SIATXRX_TH | SIATXRX_THX | SIATXRX_T4);
 			state.reg[CSR_SIATXRX / 8] |= SIATXRX_TXF;
@@ -1476,11 +1478,10 @@ int CDEC21143::dec21143_tx()
 		if (tdes1 & TDCTL_Tx_IC)
 			state.reg[CSR_STATUS / 8] |= STATUS_TI;
 
-		/*  New descriptor values, according to the docs:  */
+		/*  Setup frame complete (HRM 4.2.3): clear OWN, set all other
+		    TDES0 bits to 1. TDES1/2/3 are driver-owned -- do not touch
+		    (matches QEMU tulip.c and 86Box net_tulip.c). */
 		tdes0 = 0x7fffffff;
-		tdes1 = 0xffffffff;
-		tdes2 = 0xffffffff;
-		tdes3 = 0xffffffff;
 	}
 	else
 	{
