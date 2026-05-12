@@ -540,6 +540,8 @@ void CDisk::scsi_xfer_done_me(int bus)
 #define SCSICMD_READ_LONG             0x3E
 #define SCSICMD_READ_CD               0xBE
 
+#define SCSICMD_VERIFY_10             0x2F
+
 #define SCSICMD_WRITE                 0x0A
 #define SCSICMD_WRITE_10              0x2A
 #define SCSICMD_WRITE_12              0xAA
@@ -749,6 +751,7 @@ static inline int cdb_len_for_opcode(u8 op)
 	case 0x25: /* READ CAPACITY(10) */ return 10;
 	case 0x28: /* READ (10)         */ return 10;
 	case 0x2A: /* WRITE (10)        */ return 10;
+	case 0x2F: /* VERIFY (10)       */ return 10;
 	case 0x35: /* SYNCHRONIZE CACHE */ return 10;
 	case 0x5A: /* MODE SENSE (10)   */ return 10;
 
@@ -1242,6 +1245,7 @@ int CDisk::do_scsi_command()
 			{0x25, 10, 0}, // READ CAPACITY(10)
 			{0x28, 10, 0}, // READ(10)
 			{0x2A, 10, 0}, // WRITE(10)
+			{0x2F, 10, 0}, // VERIFY(10)
 			{0x35, 10, 0}, // SYNCHRONIZE CACHE(10)
 			{0x5A, 10, 0}, // MODE SENSE(10)
 			{0xA8, 12, 0}, // READ(12)
@@ -1519,6 +1523,36 @@ int CDisk::do_scsi_command()
 #endif
 		do_scsi_error(SCSI_OK);
 		break;
+
+	case SCSICMD_VERIFY_10:
+	{
+#if defined(DEBUG_SCSI)
+		printf("%s: VERIFY(10).\n", devid_string);
+#endif
+		// BYTCHK requests a DATA OUT compare buffer. The emulator can verify
+		// media readability, but does not implement host-data comparison.
+		if (state.scsi.cmd.data[1] & 0x02)
+		{
+			do_scsi_error(SCSI_INVALID_FIELD);
+			break;
+		}
+
+		off_t_large verify_ofs =
+			((off_t_large)state.scsi.cmd.data[2] << 24) |
+			((off_t_large)state.scsi.cmd.data[3] << 16) |
+			((off_t_large)state.scsi.cmd.data[4] << 8) |
+			((off_t_large)state.scsi.cmd.data[5] << 0);
+		retlen = (state.scsi.cmd.data[7] << 8) | state.scsi.cmd.data[8];
+
+		if ((verify_ofs + retlen) > get_lba_size())
+		{
+			do_scsi_error(SCSI_LBA_RANGE);
+			break;
+		}
+
+		do_scsi_error(SCSI_OK);
+		break;
+	}
 
 	case SCSICMD_READ:
 	case SCSICMD_READ_10:
