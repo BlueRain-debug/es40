@@ -144,6 +144,7 @@ private:
   void                nic_write(u32 address, int dsize, u32 data);
   void                mii_access(uint32_t oldreg, uint32_t idata);
   void                srom_access(uint32_t oldreg, uint32_t idata);
+  void                complete_sia_autoneg();
 
   int                 dec21143_rx();
   int                 dec21143_tx();

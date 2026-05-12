@@ -786,21 +786,7 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 		if (((data & SIASTAT_ANS) == SIASTAT_ANS_START)
 			&& (state.reg[CSR_SIATXRX / 8] & SIATXRX_ANE))
 		{
-
-			// autonegotiation restart... completes immediately in our emulated environment.
-			state.reg[CSR_SIASTAT / 8] &= ~SIASTAT_ANS;
-			state.reg[CSR_SIASTAT / 8] |=
-				(
-					SIASTAT_ANS_FLPGOOD |
-					SIASTAT_LPN |
-					SIASTAT_LPC
-					);
-			state.reg[CSR_SIASTAT / 8] &= ~(SIASTAT_LS100 | SIASTAT_LS10);  /* link UP on both speeds */
-			state.reg[CSR_STATUS / 8] |= STATUS_LNPANC;
-			state.reg[CSR_SIATXRX / 8] &= ~(SIATXRX_TH | SIATXRX_THX | SIATXRX_T4);
-			state.reg[CSR_SIATXRX / 8] |= SIATXRX_TXF;
-
-			//          DoClock();
+			complete_sia_autoneg();
 		}
 		else
 		{
@@ -809,26 +795,14 @@ void CDEC21143::nic_write(u32 address, int dsize, u32 data)
 		break;
 
 	case CSR_SIATXRX: /*  csr14  */
+		if ((data & SIATXRX_ANE) && (state.reg[CSR_SIACONN / 8] & SIACONN_SRL))
+			complete_sia_autoneg();
 		break;
 
 	case CSR_SIACONN: /*  csr13  */
 		if ((data & SIACONN_SRL) && (state.reg[CSR_SIATXRX / 8] & SIATXRX_ANE))
 		{
-
-			// SIA started with autonegotiation... completes immediately in our emulated environment.
-			state.reg[CSR_SIASTAT / 8] &= ~SIASTAT_ANS;
-			state.reg[CSR_SIASTAT / 8] |=
-				(
-					SIASTAT_ANS_FLPGOOD |
-					SIASTAT_LPN |
-					SIASTAT_LPC
-					);
-			state.reg[CSR_SIASTAT / 8] &= ~(SIASTAT_LS100 | SIASTAT_LS10);  /* link UP on both speeds */
-			state.reg[CSR_STATUS / 8] |= STATUS_LNPANC;
-			state.reg[CSR_SIATXRX / 8] &= ~(SIATXRX_TH | SIATXRX_THX | SIATXRX_T4);
-			state.reg[CSR_SIATXRX / 8] |= SIATXRX_TXF;
-
-			//          DoClock();
+			complete_sia_autoneg();
 		}
 		break;
 
@@ -1033,6 +1007,32 @@ void CDEC21143::mii_access(uint32_t oldreg, uint32_t idata)
 	state.reg[CSR_MIIROM / 8] &= ~MIIROM_MDI;
 	if (ibit)
 		state.reg[CSR_MIIROM / 8] |= MIIROM_MDI;
+}
+
+void CDEC21143::complete_sia_autoneg()
+{
+	const u32 link_partner =
+		((u32)(ANLPAR_ACK | ANLPAR_TX_FD | ANLPAR_TX |
+			ANLPAR_10_FD | ANLPAR_10 | ANLPAR_CSMA) << 16);
+
+	/* Autonegotiation completes immediately against the emulated link partner.
+	   Report a stable 100baseTX full-duplex link without remote-fault bits. */
+	state.reg[CSR_SIASTAT / 8] &= ~(SIASTAT_ANS | SIASTAT_LPC |
+		SIASTAT_LS100 | SIASTAT_LS10 | SIASTAT_NSN | SIASTAT_TRF);
+	state.reg[CSR_SIASTAT / 8] |= SIASTAT_ANS_FLPGOOD |
+		SIASTAT_LPN | link_partner;
+
+	state.reg[CSR_STATUS / 8] &= ~STATUS_LNF;
+	state.reg[CSR_STATUS / 8] |= STATUS_LNPANC;
+
+	state.reg[CSR_OPMODE / 8] &= ~OPMODE_TTM;
+	state.reg[CSR_OPMODE / 8] |= OPMODE_PS | OPMODE_PCS |
+		OPMODE_SCR | OPMODE_FD | OPMODE_HBD;
+
+	state.reg[CSR_SIATXRX / 8] &= ~(SIATXRX_TH | SIATXRX_THX | SIATXRX_T4);
+	state.reg[CSR_SIATXRX / 8] |= SIATXRX_TXF;
+
+	update_irq();
 }
 
 /**
@@ -1402,6 +1402,7 @@ int CDEC21143::dec21143_tx()
 	if (state.tx.suspend)
 		return 0;
 
+	set_tx_state(STATUS_TS_FETCH);
 	do_pci_read(addr, descr, 4, 4);
 
 	if (state.reg[CSR_BUSMODE / 8] & BUSMODE_DBO) {
@@ -1421,6 +1422,7 @@ int CDEC21143::dec21143_tx()
 		 * STATUS_TU and moves to suspended state. Do this immediately, no
 		 * idle threshold. */
 		state.reg[CSR_STATUS / 8] |= STATUS_TU;
+		set_tx_state(STATUS_TS_SUSPENDED);
 		state.tx.suspend = true;
 		update_irq();
 		return 0;
@@ -1430,8 +1432,6 @@ int CDEC21143::dec21143_tx()
 	buf2_size = (tdes1 & TDCTL_SIZE2) >> TDCTL_SIZE2_SHIFT;
 	bufaddr = buf1_size ? tdes2 : tdes3;
 	bufsize = buf1_size ? buf1_size : buf2_size;
-
-	state.reg[CSR_STATUS/8] &= ~STATUS_TS;
 
 	if (tdes1 & TDCTL_ER)    // end-of-ring, return to base
 		state.tx.cur_addr = state.reg[CSR_TXLIST / 8];
@@ -1463,6 +1463,7 @@ int CDEC21143::dec21143_tx()
 
 	if (tdes1 & TDCTL_Tx_SET)
 	{
+		set_tx_state(STATUS_TS_SETUP);
 
 		/*
 		 *  Setup Packet.
@@ -1487,6 +1488,7 @@ int CDEC21143::dec21143_tx()
 	}
 	else
 	{
+		set_tx_state(STATUS_TS_READING);
 
 		/*
 		 *  Data Packet.
@@ -1533,8 +1535,9 @@ int CDEC21143::dec21143_tx()
 				}
 			}
 
-			/* Buffer 2 - only valid if NOT chained (CH=0) and NOT end-of-ring (ER=0) */
-			if (buf2_size > 0 && !(tdes1 & TDCTL_CH) && !(tdes1 & TDCTL_ER))
+			/* Buffer 2 is valid unless the second address is chained.
+			   TER only controls descriptor wraparound after this descriptor. */
+			if (buf2_size > 0 && !(tdes1 & TDCTL_CH))
 			{
 				int avail = tx_cap - state.tx.cur_buf_len;
 				int copy = (buf2_size < avail) ? buf2_size : (avail > 0 ? avail : 0);
@@ -1603,6 +1606,8 @@ int CDEC21143::dec21143_tx()
 	if (tdes0 & (TDSTAT_Tx_UF | TDSTAT_Tx_EC | TDSTAT_Tx_LC | TDSTAT_Tx_NC |
 		TDSTAT_Tx_LO | TDSTAT_Tx_TO))
 		tdes0 |= TDSTAT_ES;
+
+	set_tx_state(STATUS_TS_CLOSE);
 
 	/*  Descriptor writeback:
 	    only write back tdes0 - the status word
@@ -1864,7 +1869,7 @@ void CDEC21143::ResetNIC()
 	state.srom.data[leaf++] = 0x00;           /* GPP Control MSB                     */
 	state.srom.data[leaf++] = 0x00;           /* GPP Data LSB                        */
 	state.srom.data[leaf++] = 0x00;           /* GPP Data MSB                        */
-	state.srom.data[leaf++] = 0x71;           /* Command LSB: PCS|SCR|Active_inv|PS  */
+	state.srom.data[leaf++] = 0x1D;           /* Command LSB: PCS|SCR|Active_inv|PS  */
 	state.srom.data[leaf++] = 0x00;           /* Command MSB                         */
 
 	/* 21142/3 SIA 10BaseT (type 2, extended, EXT=0) 7.4.2.1.1 */
