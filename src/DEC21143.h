@@ -145,6 +145,7 @@ private:
   void                mii_access(uint32_t oldreg, uint32_t idata);
   void                srom_access(uint32_t oldreg, uint32_t idata);
   void                complete_sia_autoneg();
+  void                trace_packet(const char* dir, const u8* frame, int len);
 
   int                 dec21143_rx();
   int                 dec21143_tx();
@@ -158,6 +159,7 @@ private:
   pcap_t* fp;
   struct bpf_program  fcode;
   bool                calc_crc;
+  bool                trace_packets;
 
   /// The state structure contains all elements that need to be saved to the statefile.
   struct SNIC_state

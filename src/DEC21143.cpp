@@ -169,6 +169,148 @@
 
 //#define DEBUG_NIC_IRQ
 
+static u16 pkt_be16(const u8* p)
+{
+	return (u16)(((u16)p[0] << 8) | p[1]);
+}
+
+static void pkt_format_mac(char* out, const u8* mac)
+{
+	sprintf(out, "%02x:%02x:%02x:%02x:%02x:%02x",
+		mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+static void pkt_format_ip(char* out, const u8* ip)
+{
+	sprintf(out, "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+}
+
+static const char* dhcp_type_name(int msg_type)
+{
+	switch (msg_type)
+	{
+	case 1: return "discover";
+	case 2: return "offer";
+	case 3: return "request";
+	case 4: return "decline";
+	case 5: return "ack";
+	case 6: return "nak";
+	case 7: return "release";
+	case 8: return "inform";
+	default: return "unknown";
+	}
+}
+
+static void append_text(char* out, int out_len, int* pos, const char* text)
+{
+	if (*pos >= out_len - 1)
+		return;
+	int left = out_len - *pos;
+	int wrote = snprintf(out + *pos, left, "%s", text);
+	if (wrote < 0)
+		return;
+	if (wrote >= left)
+		*pos = out_len - 1;
+	else
+		*pos += wrote;
+}
+
+static void append_dhcp_ip(char* out, int out_len, int* pos, const char* name,
+	const u8* ip)
+{
+	char addr[16];
+	char text[40];
+
+	pkt_format_ip(addr, ip);
+	snprintf(text, sizeof(text), " %s=%s", name, addr);
+	append_text(out, out_len, pos, text);
+}
+
+static void describe_dhcp(const u8* bootp, int len, char* out, int out_len)
+{
+	int pos = 0;
+	int msg_type = -1;
+	const u8* subnet = NULL;
+	const u8* router = NULL;
+	const u8* server = NULL;
+	const u8* requested = NULL;
+	char text[48];
+	char yiaddr[16];
+
+	out[0] = '\0';
+	if (len < 240)
+		return;
+	if (bootp[236] != 0x63 || bootp[237] != 0x82 ||
+		bootp[238] != 0x53 || bootp[239] != 0x63)
+		return;
+
+	for (int off = 240; off < len;)
+	{
+		int opt = bootp[off++];
+		if (opt == 0)
+			continue;
+		if (opt == 255)
+			break;
+		if (off >= len)
+			break;
+
+		int opt_len = bootp[off++];
+		if (opt_len < 0 || off + opt_len > len)
+			break;
+
+		switch (opt)
+		{
+		case 1:
+			if (opt_len >= 4)
+				subnet = &bootp[off];
+			break;
+		case 3:
+			if (opt_len >= 4)
+				router = &bootp[off];
+			break;
+		case 50:
+			if (opt_len >= 4)
+				requested = &bootp[off];
+			break;
+		case 53:
+			if (opt_len >= 1)
+				msg_type = bootp[off];
+			break;
+		case 54:
+			if (opt_len >= 4)
+				server = &bootp[off];
+			break;
+		default:
+			break;
+		}
+		off += opt_len;
+	}
+
+	if (msg_type >= 0)
+	{
+		snprintf(text, sizeof(text), " DHCP=%s(%d)",
+			dhcp_type_name(msg_type), msg_type);
+		append_text(out, out_len, &pos, text);
+	}
+	else
+		append_text(out, out_len, &pos, " DHCP");
+
+	if (bootp[16] || bootp[17] || bootp[18] || bootp[19])
+	{
+		pkt_format_ip(yiaddr, &bootp[16]);
+		snprintf(text, sizeof(text), " yiaddr=%s", yiaddr);
+		append_text(out, out_len, &pos, text);
+	}
+	if (subnet)
+		append_dhcp_ip(out, out_len, &pos, "subnet", subnet);
+	if (router)
+		append_dhcp_ip(out, out_len, &pos, "router", router);
+	if (server)
+		append_dhcp_ip(out, out_len, &pos, "server", server);
+	if (requested)
+		append_dhcp_ip(out, out_len, &pos, "request", requested);
+}
+
   /*  Internal states during MII data stream decode:  */
 #define MII_STATE_RESET                 0
 #define MII_STATE_START_WAIT            1
@@ -443,6 +585,7 @@ void CDEC21143::init()
 	rx_queue = new CPacketQueue("rx_queue",
 		(int)myCfg->get_num_value("queue", false, 100));
 	calc_crc = myCfg->get_bool_value("crc", false);
+	trace_packets = myCfg->get_bool_value("trace_packets", false);
 
 	state.rx.cur_buf = NULL;
 	/* Use a 2KB TX scratch buffer like QEMU's tulip (tx_frame[2048]) to avoid overflows. */
@@ -550,6 +693,8 @@ void CDEC21143::receive_process()
 		{
 			while (pcap_next_ex(fp, &packet_header, &packet_data) > 0)
 			{
+				if (trace_packets)
+					trace_packet("RX", packet_data, packet_header->caplen);
 				bool  resl = rx_queue->add_tail(packet_data, packet_header->caplen,
 					calc_crc, true);
 				state.reg[CSR_SIASTAT / 8] |= SIASTAT_TRA;  //set 10bT activity
@@ -560,6 +705,95 @@ void CDEC21143::receive_process()
 		// descriptors or packets to process
 		while (dec21143_rx());
 	}
+}
+
+void CDEC21143::trace_packet(const char* dir, const u8* frame, int len)
+{
+	char dst[18];
+	char src[18];
+	u16 ether_type;
+
+	if (len < 14)
+	{
+		printf("%s: %s len=%d short ethernet frame\n", devid_string, dir, len);
+		return;
+	}
+
+	pkt_format_mac(dst, &frame[0]);
+	pkt_format_mac(src, &frame[6]);
+	ether_type = pkt_be16(&frame[12]);
+
+	if (ether_type == 0x0806 && len >= 42)
+	{
+		char sha[18];
+		char tha[18];
+		char spa[16];
+		char tpa[16];
+		u16 op = pkt_be16(&frame[20]);
+
+		pkt_format_mac(sha, &frame[22]);
+		pkt_format_ip(spa, &frame[28]);
+		pkt_format_mac(tha, &frame[32]);
+		pkt_format_ip(tpa, &frame[38]);
+		printf("%s: %s len=%d %s -> %s ARP op=%u sha=%s spa=%s tha=%s tpa=%s\n",
+			devid_string, dir, len, src, dst, op, sha, spa, tha, tpa);
+		return;
+	}
+
+	if (ether_type == 0x0800 && len >= 34)
+	{
+		const u8* ip = &frame[14];
+		int ihl = (ip[0] & 0x0f) * 4;
+		char src_ip[16];
+		char dst_ip[16];
+		u8 proto;
+
+		if (ihl < 20 || len < 14 + ihl)
+		{
+			printf("%s: %s len=%d %s -> %s IPv4 malformed\n",
+				devid_string, dir, len, src, dst);
+			return;
+		}
+
+		proto = ip[9];
+		pkt_format_ip(src_ip, &ip[12]);
+		pkt_format_ip(dst_ip, &ip[16]);
+
+		if (proto == 17 && len >= 14 + ihl + 8)
+		{
+			const u8* udp = ip + ihl;
+			int udp_payload_len = len - 14 - ihl - 8;
+			u16 sport = pkt_be16(&udp[0]);
+			u16 dport = pkt_be16(&udp[2]);
+			char dhcp[220];
+
+			dhcp[0] = '\0';
+			if ((sport == 67 || sport == 68 || dport == 67 || dport == 68) &&
+				udp_payload_len > 0)
+				describe_dhcp(udp + 8, udp_payload_len, dhcp, sizeof(dhcp));
+
+			printf("%s: %s len=%d %s -> %s IPv4 %s:%u -> %s:%u UDP%s\n",
+				devid_string, dir, len, src, dst, src_ip, sport,
+				dst_ip, dport, dhcp);
+			return;
+		}
+
+		if (proto == 1 && len >= 14 + ihl + 2)
+		{
+			const u8* icmp = ip + ihl;
+			printf("%s: %s len=%d %s -> %s IPv4 %s -> %s ICMP type=%u code=%u\n",
+				devid_string, dir, len, src, dst, src_ip, dst_ip,
+				icmp[0], icmp[1]);
+			return;
+		}
+
+		printf("%s: %s len=%d %s -> %s IPv4 %s -> %s proto=%u\n",
+			devid_string, dir, len, src, dst, src_ip, dst_ip, proto);
+		return;
+	}
+
+	printf("%s: %s len=%d %s -> %s ethertype=0x%04x\n",
+		devid_string, dir, len, src, dst, ether_type);
 }
 
 /**
@@ -1562,6 +1796,8 @@ int CDEC21143::dec21143_tx()
 			if (!frame_too_long && !(state.reg[CSR_OPMODE / 8] & OPMODE_OM))
 			{
 				// printf("pcap send: %d bytes   \n", state.tx.cur_buf_len);
+				if (trace_packets)
+					trace_packet("TX", state.tx.cur_buf, state.tx.cur_buf_len);
 				if (pcap_sendpacket(fp, state.tx.cur_buf, state.tx.cur_buf_len))
 					printf("Error sending the packet: %s\n", pcap_geterr(fp));
 			}
