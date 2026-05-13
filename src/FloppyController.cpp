@@ -81,6 +81,7 @@
   * \author Camiel Vanderhoeven (camiel@camicom.com / http://www.camicom.com)
   **/
 #include "StdAfx.h"
+#include "AliM1543C.h"
 #include "FloppyController.h"
 #include "System.h"
 #include "DMA.h"
@@ -98,6 +99,10 @@ CFloppyController::CFloppyController(CConfigurator* cfg, CSystem* c, int id) : C
 	state.cmd_res_ptr = 0;
 	state.status.rqm = 1;
 	state.status.dio = 0;
+	
+	state.interrupt = false;
+	state.dor = 0x0C;
+	state.reset_sense_cnt = 0;
 
 	printf("%s: $Id$\n",
 		devid_string);
@@ -178,6 +183,9 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 		break;
 
 	case FDC_REG_DOR:
+	{
+		u8 old_dor = state.dor;
+		state.dor = data;
 		// bit 4 = drive 0 motor, bit 5 = drive 1 motor
 		// bit 3 = dma enable (ps/2 reserved?)
 		// bit 2 = 1: fdc enable (reset), 0: hold at reset
@@ -194,9 +202,20 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 			state.dma ? "on" : "off",
 			state.drive_select == 0 ? "A" : "B");
 
-
+		if ((data & 0x04) == 0) {
+			state.cmd_parms_ptr = 0;
+			state.cmd_res_ptr = 0;
+			state.cmd_res_max = 0;
+			state.status.rqm = 1;
+			state.status.dio = 0;
+			state.reset_sense_cnt = 0;
+            			clear_interrupt();
+       		} else if ((old_dor & 0x04) == 0) {
+			state.reset_sense_cnt = 4;
+			do_interrupt();
+		}
 		break;
-
+	}
 	case FDC_REG_TAPE:
 		printf("FDC: Tape register written with %" PRIx64 "\n", data);
 		break;
@@ -246,6 +265,19 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					// we may care about the ND bit (parm byte 3, bit 1)...
 					state.dma = ~(state.cmd_parms[2] & 0x01);
 					break;
+
+				case 4: // Sense Drive Status
+				{
+					int drive_idx = state.cmd_parms[1] & 3;
+					int head = (state.cmd_parms[1] >> 2) & 1;
+					u8 st3 = 0x08; // bit 3 = 1 (Ready)
+					if (state.drive[drive_idx].cylinder == 0) st3 |= 0x10; // Track 0
+					st3 |= (head << 2);
+					st3 |= drive_idx;
+					if (FDISK(drive_idx) && FDISK(drive_idx)->ro()) st3 |= 0x40;
+					state.cmd_res[0] = st3;
+					break;
+				}
 
 				case 6: // read data
 					// args:
@@ -308,13 +340,31 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					break;
 
 				case 8: // sense interrupt status
-					if (!state.interrupt)
+					if (!state.interrupt){
 						state.cmd_res[0] = 0x80;
-					else
-						state.cmd_res[0] = 0x00; // ?
-
-					state.cmd_res[1] = SEL_DRIVE.cylinder; // present cylinder number
+						state.cmd_res[1] = 0;
+					} else {
+						int drive_idx = state.drive_select & 3;
+						state.cmd_res[0] = 0x20 | drive_idx; // Seek End
+						clear_interrupt();
+						state.cmd_res[1] = state.drive[drive_idx].cylinder; // present cylinder number
+					}
 					break;
+
+				case 10: // Read ID
+				{
+					int drive_idx = state.cmd_parms[1] & 3;
+					int head = (state.cmd_parms[1] >> 2) & 1;
+					state.cmd_res[0] = drive_idx | (head << 2);
+					state.cmd_res[1] = 0;
+					state.cmd_res[2] = 0;
+					state.cmd_res[3] = state.drive[drive_idx].cylinder;
+					state.cmd_res[4] = head;
+					state.cmd_res[5] = 1;
+					state.cmd_res[6] = 2; // 512 bytes
+					do_interrupt();
+					break;
+				}
 
 				case 15: // seek
 					// args:
@@ -416,6 +466,9 @@ u64 CFloppyController::ReadMem(int index, u64 address, int dsize)
 		if (state.cmd_res_ptr >= state.cmd_res_max) {
 			state.status.rqm = 1;
 			state.status.dio = 0;
+			state.cmd_res_ptr = 0;
+			state.cmd_res_max = 0;
+			clear_interrupt();
 		}
 
 
@@ -430,7 +483,13 @@ u64 CFloppyController::ReadMem(int index, u64 address, int dsize)
 		//    bit 1 = datarate select 0
 		//    bit 0 = high density select
 
-
+		
+		int drive_idx = state.drive_select & 3;
+		if (drive_idx < 2 && FDISK(drive_idx) != NULL) {
+			data = 0x00; // Disk present
+		} else {
+			data = 0x80; // No disk
+		}
 		break;
 	}
 
@@ -511,11 +570,27 @@ int CFloppyController::RestoreState(FILE* f)
 	return 0;
 }
 
-
+void CFloppyController::init()
+{
+    if (theAli)
+    {
+        bool hasA = (FDISK(0) != NULL);
+        bool hasB = (FDISK(1) != NULL);
+        theAli->set_floppy_presence(hasA, hasB);
+    }
+}
 
 void CFloppyController::do_interrupt() {
 	// *shrug* I'll figure this out later.
 	state.interrupt = true;
+	if (theAli)
+		theAli->pic_interrupt(0, 6);
+}
+
+void CFloppyController::clear_interrupt() {
+	state.interrupt = false;
+	if (theAli)
+		theAli->pic_deassert(0, 6);
 }
 
 
@@ -540,7 +615,7 @@ u8 CFloppyController::get_status() {
 	// we mark the controller busy if a disk is seeking or
 	// if there is data waiting to be sent by the controller.
 	if (state.status.seeking[0] || state.status.seeking[1] ||
-		(state.status.dio && state.status.rqm))
+		(state.status.dio && state.status.rqm) || (state.cmd_parms_ptr > 0))
 		state.status.busy = true;
 	else
 		state.status.busy = false;
@@ -553,9 +628,6 @@ u8 CFloppyController::get_status() {
 		state.status.busy ? "BUSY" : "not busy",
 		state.status.seeking[0] ? "Disk 1 Seeking" : "Disk 1 Idle",
 		state.status.seeking[1] ? "Disk 0 Seeking" : "Disk 0 Idle");
-
-
-
 
 	u8 data = (state.status.rqm ? 0x80 : 0x00) |
 		(state.status.dio ? 0x40 : 0x00) |
