@@ -534,7 +534,7 @@ void CFloppyController::do_interrupt() {
 		theAli->pic_interrupt(0, 6);
 }
 
-void clear_interrupt() {
+void CFloppyController::clear_interrupt() {
 	state.interrupt = false;
 	if (theAli)
 		theAli->pic_deassert(0, 6);
