@@ -1869,8 +1869,8 @@ void CDEC21143::ResetNIC()
 	state.srom.data[leaf++] = 0x00;           /* GPP Control MSB                     */
 	state.srom.data[leaf++] = 0x00;           /* GPP Data LSB                        */
 	state.srom.data[leaf++] = 0x00;           /* GPP Data MSB                        */
-	state.srom.data[leaf++] = 0x1D;           /* Command LSB: PCS|SCR|Active_inv|PS  */
-	state.srom.data[leaf++] = 0x00;           /* Command MSB                         */
+	state.srom.data[leaf++] = 0x61;           /* Command LSB: PS|PCS|SCR, no TTM     */
+	state.srom.data[leaf++] = 0x80;           /* Command MSB: no media sense pin      */
 
 	/* 21142/3 SIA 10BaseT (type 2, extended, EXT=0) 7.4.2.1.1 */
 	state.srom.data[leaf++] = 0x80 | 6;       /* F=1, length=6 (no Media Specific Data) */
