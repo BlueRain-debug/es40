@@ -85,6 +85,9 @@
 #include "../Keyboard.h"
 #include "../Configurator.h"
 
+#include "../Disk.h"
+#include "../DiskFile.h"
+
 #define _MULTI_THREAD
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
@@ -440,7 +443,12 @@ void bx_sdl_gui_c::handle_events(void)
 				}
 			} */
 			break;
-
+		case SDL_EVENT_WINDOW_FOCUS_LOST:
+		{
+			if (sdl_grab)
+				bx_gui->mouse_enabled_changed(false);
+			break;
+		}
 		case SDL_EVENT_KEY_DOWN:
 			if (sdl_event.key.key == SDLK_END &&
 				(sdl_event.key.mod & SDL_KMOD_CTRL) &&
@@ -491,6 +499,22 @@ void bx_sdl_gui_c::handle_events(void)
 				sdl_swallow_keys = true;  // eat subsequent releases
 				break;
 			}
+#ifdef _WIN32
+			extern void win32_select_file(HWND hwnd);
+			if (sdl_event.key.key == SDLK_F11 && (sdl_event.key.mod & SDL_KMOD_CTRL))
+			{
+				theKeyboard->gen_scancode(BX_KEY_CTRL_L | BX_KEY_RELEASED);
+				theKeyboard->gen_scancode(BX_KEY_CTRL_R | BX_KEY_RELEASED);
+				
+				if (sdl_grab)
+					bx_gui->mouse_enabled_changed(false);
+
+				win32_select_file((HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(sdl_window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+
+				sdl_swallow_keys = true;  // eat subsequent releases
+				break;
+			}
+#endif
 			if (sdl_swallow_keys)
 				break;  // swallow any key-down during toggle
 
