@@ -90,23 +90,11 @@
 
 #define DO_STL    WRITE_VIRT(state.r[REG_2] + DISP_16, 32, state.r[REG_1]);
 
-#define DO_STL_C  if(cSystem->cpu_unlock(state.iProcNum))     \
-  {                                                           \
-    WRITE_VIRT(state.r[REG_2] + DISP_16, 32, state.r[REG_1]); \
-    state.r[REG_1] = 1;                                   \
-  }                                                       \
-  else                                                    \
-    state.r[REG_1] = 0;
+#define DO_STL_C  WRITE_VIRT_COND(state.r[REG_2] + DISP_16, 32, state.r[REG_1], state.r[REG_1]);
 
 #define DO_STQ    WRITE_VIRT(state.r[REG_2] + DISP_16, 64, state.r[REG_1]);
 
-#define DO_STQ_C  if(cSystem->cpu_unlock(state.iProcNum))     \
-  {                                                           \
-    WRITE_VIRT(state.r[REG_2] + DISP_16, 64, state.r[REG_1]); \
-    state.r[REG_1] = 1;                                       \
-  }                                                           \
-  else                                                        \
-    state.r[REG_1] = 0;
+#define DO_STQ_C  WRITE_VIRT_COND(state.r[REG_2] + DISP_16, 64, state.r[REG_1], state.r[REG_1]);
 
 #define DO_STQ_U  WRITE_VIRT((state.r[REG_2] + DISP_16) & ~U64(0x07), 64, state.r[REG_1]);
 

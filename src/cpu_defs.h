@@ -516,6 +516,7 @@ inline u64 fsqrt64(u64 asig, s32 exp)
 
 #define ALPHA_BASE_PAGE_MASK          U64(0x1fff)
 #define TB_INDEX_DATA                 0
+#define TB_INDEX_ITB                  1
 
 #if defined(DEBUG_UNALIGN)
 #define TRACE_UNALIGN(flags, align)                                              \
@@ -650,7 +651,10 @@ inline u64 fsqrt64(u64 asig, s32 exp)
   **/
 #define WRITE_PHYS(data, size)                         \
   if (phys_address < dram_size)                        \
+  {                                                     \
+    cSystem->cpu_break_locks(phys_address, this);       \
     dram_write(dram_ptr, phys_address, size, data);    \
+  }                                                     \
   else                                                 \
     cSystem->WriteMem(phys_address, size, data, this); \
   LWR
@@ -664,16 +668,59 @@ inline u64 fsqrt64(u64 asig, s32 exp)
     for (int ii=0; ii<(size/8); ii++) {                     \
       DATA_PHYS(va+ii, ACCESS_WRITE, 0);                    \
       if (phys_address < dram_size)                         \
+      {                                                     \
+        cSystem->cpu_break_locks(phys_address, this);       \
         dram_write(dram_ptr, phys_address, 8, aa);          \
+      }                                                     \
       else                                                  \
         cSystem->WriteMem(phys_address, 8, aa, this);       \
       aa >>= 8;                                             \
     }                                                       \
   } else {                                                  \
     if (phys_address < dram_size)                           \
+    {                                                       \
+      cSystem->cpu_break_locks(phys_address, this);         \
       dram_write(dram_ptr, phys_address, size, src);        \
+    }                                                       \
     else                                                    \
       cSystem->WriteMem(phys_address, size, src, this);     \
+  }
+
+#define WRITE_VIRT_COND(va, size, src, dest)                \
+  {                                                         \
+    u64 _stc_va = (va);                                     \
+    u64 _stc_data = (src);                                  \
+    pbc = false;                                            \
+    DATA_PHYS(_stc_va, ACCESS_WRITE, (size/8)-1);           \
+    if (cSystem->cpu_unlock(state.iProcNum, phys_address))  \
+    {                                                       \
+      LWR;                                                  \
+      if (pbc) {                                            \
+        u64 aa = _stc_data;                                 \
+        for (int ii=0; ii<(size/8); ii++) {                 \
+          DATA_PHYS(_stc_va+ii, ACCESS_WRITE, 0);           \
+          if (phys_address < dram_size)                     \
+          {                                                 \
+            cSystem->cpu_break_locks(phys_address, this);   \
+            dram_write(dram_ptr, phys_address, 8, aa);      \
+          }                                                 \
+          else                                              \
+            cSystem->WriteMem(phys_address, 8, aa, this);   \
+          aa >>= 8;                                         \
+        }                                                   \
+      } else {                                              \
+        if (phys_address < dram_size)                       \
+        {                                                   \
+          cSystem->cpu_break_locks(phys_address, this);     \
+          dram_write(dram_ptr, phys_address, size, _stc_data); \
+        }                                                   \
+        else                                                \
+          cSystem->WriteMem(phys_address, size, _stc_data, this); \
+      }                                                     \
+      dest = 1;                                             \
+    }                                                       \
+    else                                                    \
+      dest = 0;                                             \
   }
 
   /**
@@ -697,13 +744,13 @@ inline u64 fsqrt64(u64 asig, s32 exp)
 #if defined(IDB)
 #define WRITE_PHYS_NT(data, size)                                          \
   { u64 _pa = ALIGN_PHYS((size) / 8);                                     \
-    if (_pa < dram_size) dram_write(dram_ptr, _pa, size, data);            \
+    if (_pa < dram_size) { cSystem->cpu_break_locks(_pa, this); dram_write(dram_ptr, _pa, size, data); } \
     else cSystem->WriteMem(_pa, size, data, this); }                       \
   LWR
 #else
 #define WRITE_PHYS_NT(data, size)                                          \
   { u64 _pa = ALIGN_PHYS((size) / 8);                                     \
-    if (_pa < dram_size) dram_write(dram_ptr, _pa, size, data);            \
+    if (_pa < dram_size) { cSystem->cpu_break_locks(_pa, this); dram_write(dram_ptr, _pa, size, data); } \
     else cSystem->WriteMem(_pa, size, data, this); }
 #endif
 

@@ -733,6 +733,15 @@ int CSystem::SingleStep()
 #if defined(DEBUG_PORTACCESS)
 u64 lastport;
 #endif //defined(DEBUG_PORTACCESS)
+
+#define CPU_LOCK_MATCH_MASK U64(0x00000807ffffff00)
+#define CPU_LOCK_IO_MASK    U64(0x0000080000000000)
+
+static inline bool cpu_lock_matches(u64 locked_address, u64 address)
+{
+	return !((locked_address ^ address) & CPU_LOCK_MATCH_MASK);
+}
+
 void CSystem::cpu_lock(int cpuid, u64 address)
 {
 	SCOPED_FM_LOCK(cpu_lock_mutex);
@@ -742,22 +751,43 @@ void CSystem::cpu_lock(int cpuid, u64 address)
 	state.cpu_lock_address[cpuid] = address;
 }
 
-bool CSystem::cpu_unlock(int cpuid)
+bool CSystem::cpu_unlock(int cpuid, u64 address, bool clear)
 {
 	SCOPED_FM_LOCK(cpu_lock_mutex);
 
-	bool  retval;
-	retval = state.cpu_lock_flags & (1 << cpuid);
+	bool retval = (address & CPU_LOCK_IO_MASK) ||
+	              ((state.cpu_lock_flags & (1 << cpuid)) &&
+	               cpu_lock_matches(state.cpu_lock_address[cpuid], address));
 
 	//  printf("cpu%d: unlock (%s).   \n",cpuid,retval?"ok":"failed");
-	state.cpu_lock_flags &= ~(1 << cpuid);
+	if (clear)
+		state.cpu_lock_flags &= ~(1 << cpuid);
 	return retval;
+}
+
+void CSystem::cpu_break_locks(u64 address, CSystemComponent* source, bool include_source)
+{
+	int i;
+
+	SCOPED_FM_LOCK(cpu_lock_mutex);
+
+	for (i = 0; i < iNumCPUs; i++)
+	{
+		if ((state.cpu_lock_flags & (1 << i)) &&
+		    cpu_lock_matches(state.cpu_lock_address[i], address) &&
+		    (include_source || (source != acCPUs[i])))
+		{
+			if (source != acCPUs[i])
+				printf("cpu%d: lock broken by %s.   \n", i, source ? source->devid_string : "external write");
+			state.cpu_lock_flags &= ~(1 << i);
+		}
+	}
 }
 
 void CSystem::cpu_break_lock(int cpuid, CSystemComponent* source)
 {
 	SCOPED_FM_LOCK(cpu_lock_mutex);
-	printf("cpu%d: lock broken by %s.   \n", cpuid, source->devid_string);
+	printf("cpu%d: lock broken by %s.   \n", cpuid, source ? source->devid_string : "external write");
 	state.cpu_lock_flags &= ~(1 << cpuid);
 }
 
@@ -854,14 +884,7 @@ void CSystem::WriteMem(u64 address, int dsize, u64 data, CSystemComponent* sourc
 	u16   t16;
 #endif //defined(ALIGN_MEM_ACCESS)
 	if (state.cpu_lock_flags)
-	{
-		for (i = 0; i < iNumCPUs; i++)
-		{
-			if ((state.cpu_lock_flags & (1 << i)) && (
-				!((state.cpu_lock_address[i] ^ address) & U64(0x00000807ffffff00)))
-				&& (source != acCPUs[i])) cpu_break_lock(i, source);
-		}
-	}
+		cpu_break_locks(address, source);
 
 	a = address & U64(0x00000807ffffffff);
 

@@ -313,12 +313,13 @@ private:
   int             get_icache(u64 address, u32* data);
   int             FindTBEntry(u64 virt, int flags);
   int             initiate_acv_fault(u64 virt, int flags, u32 instruction);
-  void            add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags);
+  void            add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags, int asn);
   void            add_tb_i(u64 virt, u64 pte);
-  void            add_tb_d(u64 virt, u64 pte);
+  void            add_tb_d(u64 virt, u64 pte, int dtb);
   void            tbia(int flags);
   void            tbiap(int flags);
   void            tbis(u64 virt, int flags);
+  void            tbis_d(u64 virt, int asn);
 
   /* Floating Point routines */
   u64             ieee_lds(u32 op);
@@ -567,16 +568,18 @@ private:
       int   access[2][4]; /**< Access permitted [read/write][current mode]*/
       int   fault[3];     /**< Fault on access [read/write/execute]*/
       bool  valid;        /**< Valid entry*/
-    } tb[2][TB_ENTRIES];  /**< Translation buffer entries */
+    } tb[2][TB_ENTRIES];  /**< Unified Dstream TB model plus Istream TB entries */
 
     int   next_tb[2];     /**< Number of next translation buffer entry to use */
     int   last_found_tb[2][2];  /**< Number of last translation buffer entry found */
     u32   rem_ins_in_page;      /**< Number of instructions remaining in current page */
     int   iProcNum; /**< number of the current processor (0 in a 1-processor system) */
-    u64   last_tb_virt;
+    u64   last_tb_virt;       /**< ITB_TAG staging register for ITB_PTE writes */
     bool  pal_vms;            /**< True if the PALcode base is 0x8000 (=VMS PALcode base) */
     int   irq_h_timer[6];     /**< Timers for delayed IRQ_H[0:5] assertion */
   } state;  /**< Determines CPU state that needs to be saved to the state file */
+
+  u64 last_dtb_virt[2];   /**< DTB_TAG0/1 staging registers for DTB_PTE0/1 writes */
 
 #ifdef IDB
   u64 current_pc_physical;  /**< Physical address of current instruction */

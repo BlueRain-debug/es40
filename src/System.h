@@ -278,7 +278,8 @@ public:
   void          set_c_dim(int ProcNum, u64 value);
 
   void          cpu_lock(int cpuid, u64 address);
-  bool          cpu_unlock(int cpuid);
+  bool          cpu_unlock(int cpuid, u64 address, bool clear = true);
+  void          cpu_break_locks(u64 address, CSystemComponent* source, bool include_source = false);
   void          cpu_break_lock(int cpuid, CSystemComponent* source);
   void          RequestSystemReset();
   bool          IsSystemResetRequested() const;

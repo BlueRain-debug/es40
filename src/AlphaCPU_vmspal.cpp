@@ -1261,7 +1261,7 @@ int CAlphaCPU::vmspal_ent_dtbm_single(int flags)
 
 		p4 <<= 0x20;
 		p4 |= p5;
-		add_tb_d(p6, p4);
+		add_tb_d(p6, p4, 0);
 		return 0;
 	}
 
@@ -1345,7 +1345,7 @@ int CAlphaCPU::vmspal_ent_dtbm_single(int flags)
 		return vmspal_int_initiate_exception();
 	}
 
-	add_tb_d(p6, p4);
+	add_tb_d(p6, p4, 0);
 	return 0;
 }
 
@@ -1432,7 +1432,7 @@ int CAlphaCPU::vmspal_ent_dtbm_double_3(int flags)
 		hw_ldq(t25, t25);
 		if (t25 & 1)
 		{
-			add_tb_d(p4, t25);
+			add_tb_d(p4, t25, 0);
 			return 0;
 		}
 	}

@@ -311,15 +311,15 @@
       break;                                                                     \
                                                                             \
     case 0x20:  /* DTB_TAG0 */                                                   \
-      state.last_tb_virt = state.r[REG_2];                                       \
+      last_dtb_virt[0] = state.r[REG_2];                                         \
       break;                                                                     \
                                                                             \
     case 0x21:  /* DTB_PTE0 */                                                   \
-      add_tb_d(state.last_tb_virt, state.r[REG_2]);                              \
+      add_tb_d(last_dtb_virt[0], state.r[REG_2], 0);                             \
       break;                                                                     \
                                                                             \
     case 0x24:  /* DTB_IS0 */                                                    \
-      tbis(state.r[REG_2], ACCESS_READ);                                         \
+      tbis_d(state.r[REG_2], state.asn0);                                        \
       break;                                                                     \
                                                                             \
     case 0x25:  /* DTB_ASN0 */                                                   \
@@ -346,11 +346,11 @@
       break;                                                                     \
                                                                             \
     case 0xa0:  /* DTB_TAG1 */                                                   \
-      state.last_tb_virt = state.r[REG_2];                                       \
+      last_dtb_virt[1] = state.r[REG_2];                                         \
       break;                                                                     \
                                                                             \
     case 0xa1:  /* DTB_PTE1 */                                                   \
-      add_tb_d(state.last_tb_virt, state.r[REG_2]);                              \
+      add_tb_d(last_dtb_virt[1], state.r[REG_2], 1);                             \
       break;                                                                     \
                                                                             \
     case 0xa2:  /* DTB_IAP */                                                    \
@@ -362,7 +362,7 @@
       break;                                                                     \
                                                                             \
     case 0xa4:  /* DTB_IS1 */                                                    \
-      tbis(state.r[REG_2], ACCESS_READ);                                         \
+      tbis_d(state.r[REG_2], state.asn1);                                        \
       break;                                                                     \
                                                                             \
     case 0xa5:  /* DTB_ASN1 */                                                   \
@@ -499,9 +499,9 @@
     break;                                                                    \
                                                                            \
   case 2:       /* longword physical conditional */                           \
-    if(cSystem->cpu_unlock(state.iProcNum))                                   \
+    phys_address = state.r[REG_2] + DISP_12;                                  \
+    if(cSystem->cpu_unlock(state.iProcNum, phys_address, false))              \
     {                                                                         \
-      phys_address = state.r[REG_2] + DISP_12;                                \
       WRITE_PHYS_NT(state.r[REG_1], 32);                                      \
       state.r[REG_1] = 1;                                                     \
     }                                                                         \
@@ -534,9 +534,9 @@
     break;                                                                     \
                                                                             \
   case 3:       /* quadword physical conditional */                            \
-    if(cSystem->cpu_unlock(state.iProcNum))                                    \
+    phys_address = state.r[REG_2] + DISP_12;                                   \
+    if(cSystem->cpu_unlock(state.iProcNum, phys_address, false))               \
     {                                                                          \
-      phys_address = state.r[REG_2] + DISP_12;                                 \
       WRITE_PHYS_NT(state.r[REG_1], 64);                                       \
       state.r[REG_1] = 1;                                                      \
     }                                                                          \

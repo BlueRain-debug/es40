@@ -407,6 +407,7 @@ CAlphaCPU::CAlphaCPU(CConfigurator* cfg, CSystem* system) : CSystemComponent(cfg
 void CAlphaCPU::init()
 {
 	memset(&state, 0, sizeof(state));
+	last_dtb_virt[0] = last_dtb_virt[1] = 0;
 
 	cpu_hz = myCfg->get_num_value("speed", true, 500000000);
 	vmspal_lle_enabled = myCfg->get_bool_value("palcode.vms.nohle", false);
@@ -427,7 +428,7 @@ void CAlphaCPU::init()
 	state.smc = 1;
 
 	// SROM imitation...
-	add_tb(0, 0, U64(0xff61), ACCESS_READ);
+	add_tb(0, 0, U64(0xff61), ACCESS_READ, state.asn0);
 
 #if defined(IDB)
 	bListing = false;
@@ -471,6 +472,7 @@ void CAlphaCPU::ResetForSystemReset()
 	const int savedProcNum = state.iProcNum;
 
 	memset(&state, 0, sizeof(state));
+	last_dtb_virt[0] = last_dtb_virt[1] = 0;
 	state.iProcNum = savedProcNum;
 
 	cpu_hz = myCfg->get_num_value("speed", true, 500000000);
@@ -488,7 +490,7 @@ void CAlphaCPU::ResetForSystemReset()
 	state.smc = 1;
 
 	// SROM imitation...
-	add_tb(0, 0, U64(0xff61), ACCESS_READ);
+	add_tb(0, 0, U64(0xff61), ACCESS_READ, state.asn0);
 
 	myThread = 0;
 
@@ -1816,6 +1818,7 @@ int CAlphaCPU::RestoreState(FILE* f)
 	}
 
 	printf("%s: %d bytes restored.\n", devid_string, (int)ss);
+	last_dtb_virt[0] = last_dtb_virt[1] = 0;
 
 	return 0;
 }
@@ -1842,30 +1845,34 @@ int CAlphaCPU::RestoreState(FILE* f)
 int CAlphaCPU::FindTBEntry(u64 virt, int flags)
 {
 
-	// Use ITB (tb[1]) if ACCESS_EXEC is set, otherwise use DTB (tb[0])
-	int t = (flags & ACCESS_EXEC) ? 1 : 0;
-	int asn = (flags & ACCESS_EXEC) ? state.asn : state.asn0;
+	// Use ITB (tb[1]) if ACCESS_EXEC is set, otherwise the unified Dstream TB (tb[0]).
+	int t = (flags & ACCESS_EXEC) ? TB_INDEX_ITB : TB_INDEX_DATA;
+	int asn = state.asn;
 
 	int rw = (flags & ACCESS_WRITE) ? 1 : 0;
+
+#define TB_ASN_MATCH(entry) ((entry).asm_bit || \
+	((entry).asn == ((t == TB_INDEX_ITB) ? asn : state.asn0)))
 
 	// Try last match first; this is a good quess, especially in the ITB
 	int i = state.last_found_tb[t][rw];
 	if (state.tb[t][i].valid
 		&& !((state.tb[t][i].virt ^ virt) & state.tb[t][i].match_mask)
-		&& (state.tb[t][i].asm_bit || (state.tb[t][i].asn == asn)))	return i;
+		&& TB_ASN_MATCH(state.tb[t][i]))	return i;
 
 	// Otherwise, loop through the TB entries to find a match.
 	for (i = 0; i < TB_ENTRIES; i++)
 	{
 		if (state.tb[t][i].valid
 			&& !((state.tb[t][i].virt ^ virt) & state.tb[t][i].match_mask)
-			&& (state.tb[t][i].asm_bit || (state.tb[t][i].asn == asn)))
+			&& TB_ASN_MATCH(state.tb[t][i]))
 		{
 			state.last_found_tb[t][rw] = i;
 			return i;
 		}
 	}
 
+#undef TB_ASN_MATCH
 	return -1;
 }
 
@@ -1966,12 +1973,11 @@ int CAlphaCPU::initiate_acv_fault(u64 virt, int flags, u32 ins)
  **/
 int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 {
-	int   t = (flags & ACCESS_EXEC) ? 1 : 0;
+	int   t = (flags & ACCESS_EXEC) ? TB_INDEX_ITB : TB_INDEX_DATA;
 	int   i;
 	int   res;
 
 	int   spe = (flags & ACCESS_EXEC) ? state.i_ctl_spe : state.m_ctl_spe;
-	int   asn = (flags & ACCESS_EXEC) ? state.asn : state.asn0;
 	/*
 	 * Access-check current mode selection.
 	 *  - VPTE (HRM 6.4.1 Table 6-3): Virtual/VPTE accesses are LD_VPTE
@@ -2381,16 +2387,16 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
  * \param virt    Virtual address.
  * \param pte     Translation in DTB_PTE format (see add_tb_d).
  * \param flags   ACCESS_EXEC determines which translation buffer to use.
+ * \param asn     Address space number latched by the PAL fill port.
  **/
-void CAlphaCPU::add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags)
+void CAlphaCPU::add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags, int asn)
 {
-	int t = (flags & ACCESS_EXEC) ? 1 : 0;
+	int t = (flags & ACCESS_EXEC) ? TB_INDEX_ITB : TB_INDEX_DATA;
 	int rw = (flags & ACCESS_WRITE) ? 1 : 0;
 	u64 match_mask = 0;
 	u64 keep_mask = 0;
 	u64 phys_mask = 0;
 	int i;
-	int asn = (flags & ACCESS_EXEC) ? state.asn : state.asn0;
 
 	switch (pte_flags & 0x60)  // granularity hint
 	{
@@ -2419,7 +2425,17 @@ void CAlphaCPU::add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags)
 		break;
 	}
 
-	i = FindTBEntry(virt, flags);
+	i = -1;
+	for (int j = 0; j < TB_ENTRIES; j++)
+	{
+		if (state.tb[t][j].valid
+		    && !((state.tb[t][j].virt ^ virt) & state.tb[t][j].match_mask)
+		    && (state.tb[t][j].asm_bit || state.tb[t][j].asn == asn))
+		{
+			i = j;
+			break;
+		}
+	}
 
 	if (i < 0)
 	{
@@ -2449,7 +2465,7 @@ void CAlphaCPU::add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags)
 	state.tb[t][i].valid = true;
 	state.last_found_tb[t][rw] = i;
 
-	if (t == 0)
+	if (t == TB_INDEX_DATA)
 		flush_data_page_cache();
 
 #if defined(DEBUG_TB_)
@@ -2458,22 +2474,22 @@ void CAlphaCPU::add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags)
 #endif
 	{
 		printf("Add TB---------------------------------------\n");
-		printf("Map VIRT    %016" PRIx64 "\n", state.tb[i].virt);
-		printf("Matching    %016" PRIx64 "\n", state.tb[i].match_mask);
-		printf("And keeping %016" PRIx64 "\n", state.tb[i].keep_mask);
-		printf("To PHYS     %016" PRIx64 "\n", state.tb[i].phys);
-		printf("Read : %c%c%c%c %c\n", state.tb[i].access[0][0] ? 'K' : '-',
-			state.tb[i].access[0][1] ? 'E' : '-',
-			state.tb[i].access[0][2] ? 'S' : '-',
-			state.tb[i].access[0][3] ? 'U' : '-', state.tb[i].fault[0] ? 'F' : '-');
-		printf("Write: %c%c%c%c %c\n", state.tb[i].access[1][0] ? 'K' : '-',
-			state.tb[i].access[1][1] ? 'E' : '-',
-			state.tb[i].access[1][2] ? 'S' : '-',
-			state.tb[i].access[1][3] ? 'U' : '-', state.tb[i].fault[1] ? 'F' : '-');
-		printf("Exec : %c%c%c%c %c\n", state.tb[i].access[1][0] ? 'K' : '-',
-			state.tb[i].access[1][1] ? 'E' : '-',
-			state.tb[i].access[1][2] ? 'S' : '-',
-			state.tb[i].access[1][3] ? 'U' : '-', state.tb[i].fault[1] ? 'F' : '-');
+		printf("Map VIRT    %016" PRIx64 "\n", state.tb[t][i].virt);
+		printf("Matching    %016" PRIx64 "\n", state.tb[t][i].match_mask);
+		printf("And keeping %016" PRIx64 "\n", state.tb[t][i].keep_mask);
+		printf("To PHYS     %016" PRIx64 "\n", state.tb[t][i].phys);
+		printf("Read : %c%c%c%c %c\n", state.tb[t][i].access[0][0] ? 'K' : '-',
+			state.tb[t][i].access[0][1] ? 'E' : '-',
+			state.tb[t][i].access[0][2] ? 'S' : '-',
+			state.tb[t][i].access[0][3] ? 'U' : '-', state.tb[t][i].fault[0] ? 'F' : '-');
+		printf("Write: %c%c%c%c %c\n", state.tb[t][i].access[1][0] ? 'K' : '-',
+			state.tb[t][i].access[1][1] ? 'E' : '-',
+			state.tb[t][i].access[1][2] ? 'S' : '-',
+			state.tb[t][i].access[1][3] ? 'U' : '-', state.tb[t][i].fault[1] ? 'F' : '-');
+		printf("Exec : %c%c%c%c %c\n", state.tb[t][i].access[1][0] ? 'K' : '-',
+			state.tb[t][i].access[1][1] ? 'E' : '-',
+			state.tb[t][i].access[1][2] ? 'S' : '-',
+			state.tb[t][i].access[1][3] ? 'U' : '-', state.tb[t][i].fault[1] ? 'F' : '-');
 	}
 #endif
 }
@@ -2497,10 +2513,11 @@ void CAlphaCPU::add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags)
  *
  * \param virt    Virtual address.
  * \param pte     Translation in DTB_PTE format.
+ * \param dtb     DTB fill port number (0 = DTB_PTE0, 1 = DTB_PTE1).
  **/
-void CAlphaCPU::add_tb_d(u64 virt, u64 pte)
+void CAlphaCPU::add_tb_d(u64 virt, u64 pte, int dtb)
 {
-	add_tb(virt, pte >> (32 - 13), pte, ACCESS_READ);
+	add_tb(virt, pte >> (32 - 13), pte, ACCESS_READ, dtb ? state.asn1 : state.asn0);
 }
 
 /**
@@ -2525,7 +2542,7 @@ void CAlphaCPU::add_tb_d(u64 virt, u64 pte)
  **/
 void CAlphaCPU::add_tb_i(u64 virt, u64 pte)
 {
-	add_tb(virt, pte, pte & 0xf70, ACCESS_EXEC);
+	add_tb(virt, pte, pte & 0xf70, ACCESS_EXEC, state.asn);
 }
 
 /**
@@ -2537,14 +2554,14 @@ void CAlphaCPU::add_tb_i(u64 virt, u64 pte)
  **/
 void CAlphaCPU::tbia(int flags)
 {
-	int t = (flags & ACCESS_EXEC) ? 1 : 0;
+	int t = (flags & ACCESS_EXEC) ? TB_INDEX_ITB : TB_INDEX_DATA;
 	int i;
 	for (i = 0; i < TB_ENTRIES; i++)
 		state.tb[t][i].valid = false;
 	state.last_found_tb[t][0] = 0;
 	state.last_found_tb[t][1] = 0;
 	state.next_tb[t] = 0;
-	if (t == 0) flush_data_page_cache();
+	if (t == TB_INDEX_DATA) flush_data_page_cache();
 }
 
 /**
@@ -2557,13 +2574,13 @@ void CAlphaCPU::tbia(int flags)
  **/
 void CAlphaCPU::tbiap(int flags)
 {
-	int t = (flags & ACCESS_EXEC) ? 1 : 0;
+	int t = (flags & ACCESS_EXEC) ? TB_INDEX_ITB : TB_INDEX_DATA;
 	int i;
 	for (i = 0; i < TB_ENTRIES; i++)
 		if (!state.tb[t][i].asm_bit)
 			state.tb[t][i].valid = false;
 
-	if (t == 0) flush_data_page_cache();
+	if (t == TB_INDEX_DATA) flush_data_page_cache();
 }
 
 /**
@@ -2574,12 +2591,36 @@ void CAlphaCPU::tbiap(int flags)
  **/
 void CAlphaCPU::tbis(u64 virt, int flags)
 {
-	int t = (flags & ACCESS_EXEC) ? 1 : 0;
+	int t = (flags & ACCESS_EXEC) ? TB_INDEX_ITB : TB_INDEX_DATA;
+
+	if (t == TB_INDEX_DATA)
+	{
+		tbis_d(virt, state.asn0);
+		if (state.asn1 != state.asn0)
+			tbis_d(virt, state.asn1);
+		return;
+	}
+
 	int i = FindTBEntry(virt, flags);
 	if (i >= 0)
 		state.tb[t][i].valid = false;
+}
 
-	if (t == 0) flush_data_page_cache();
+void CAlphaCPU::tbis_d(u64 virt, int asn)
+{
+	int i;
+
+	for (i = 0; i < TB_ENTRIES; i++)
+	{
+		if (state.tb[TB_INDEX_DATA][i].valid
+		    && !((state.tb[TB_INDEX_DATA][i].virt ^ virt) & state.tb[TB_INDEX_DATA][i].match_mask)
+		    && (state.tb[TB_INDEX_DATA][i].asm_bit || state.tb[TB_INDEX_DATA][i].asn == asn))
+		{
+			state.tb[TB_INDEX_DATA][i].valid = false;
+		}
+	}
+
+	flush_data_page_cache();
 }
 
 //\}
