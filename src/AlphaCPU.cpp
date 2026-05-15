@@ -1869,6 +1869,59 @@ int CAlphaCPU::FindTBEntry(u64 virt, int flags)
 	return -1;
 }
 
+static inline u64 alpha_sext_u64_43(u64 a)
+{
+	return (a & U64(0x0000040000000000)) ? (a | U64(0xfffff80000000000))
+	                                     : (a & U64(0x000007ffffffffff));
+}
+
+static inline bool alpha_valid_va_form(u64 virt, bool va48)
+{
+	return (va48 ? sext_u64_48(virt) : alpha_sext_u64_43(virt)) == virt;
+}
+
+int CAlphaCPU::initiate_acv_fault(u64 virt, int flags, u32 ins)
+{
+	int res;
+
+	state.exc_addr = state.current_pc;
+
+	if (flags & ACCESS_EXEC)
+	{
+		state.exc_sum = 0;
+		if (state.pal_vms)
+		{
+			res = vmspal_ent_iacv(flags);
+			return res ? res : -1;
+		}
+
+		set_pc(state.pal_base + IACV + 1);
+		return -1;
+	}
+
+	state.fault_va = virt;
+	state.va_form_va = virt;
+	state.exc_sum = ((u64)REG_1 & 0x1f) << 8;  /* HRM 5.2.13: EXC_SUM REG[12:8] is 5 bits */
+
+	u32 opcode = I_GETOP(ins);
+	state.mm_stat =
+		(
+			(opcode == 0x1b || opcode == 0x1f) ? opcode -
+			0x18 : opcode
+			) <<
+		4 |
+		(flags & ACCESS_WRITE) |
+		2;
+	if (state.pal_vms)
+	{
+		res = vmspal_ent_dfault(flags);
+		return res ? res : -1;
+	}
+
+	set_pc(state.pal_base + DFAULT + 1);
+	return -1;
+}
+
 /**
  * \brief Translate a virtual address to a physical address.
  *
@@ -1934,6 +1987,8 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 	           (flags & ALT)  ? state.alt_cm :
 	                            state.cm;
 	bool  forreal = !(flags & FAKE);
+	bool  va48 = (flags & ACCESS_EXEC) ? (state.i_ctl_va_mode & 1)
+	                                   : (state.va_ctl_va_mode & 1);
 
 #if defined IDB
 	if (bListing)
@@ -1950,9 +2005,26 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 			printf("TB %" PRIx64 ",%x: ", virt, flags);
 #endif
 
-	// try superpage first.
-	if (spe && !cm)
+	if (!alpha_valid_va_form(virt, va48))
 	{
+#if defined(DEBUG_TB)
+		if (forreal)
+#if defined(IDB)
+			if (bTB_Debug)
+#endif
+				printf("acv-va-form\n");
+#endif
+		if (!forreal)
+			return -1;
+		return initiate_acv_fault(virt, flags, ins);
+	}
+
+	// try superpage first.
+	if (spe)
+	{
+		bool spe_hit = false;
+		u64 spe_phys = 0;
+
 #if defined(DEBUG_TB)
 		if (forreal)
 #if defined(IDB)
@@ -1966,17 +2038,8 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 		// ignored.
 		if (((virt & SPE_2_MASK) == SPE_2_MATCH) && (spe & 4))
 		{
-			*phys = virt & SPE_2_MAP;
-			if (asm_bit)
-				*asm_bit = false;
-#if defined(DEBUG_TB)
-			if (forreal)
-#if defined(IDB)
-				if (bTB_Debug)
-#endif
-					printf("SPE\n");
-#endif
-			return 0;
+			spe_hit = true;
+			spe_phys = virt & SPE_2_MAP;
 		}
 
 		// SPE[1], when set, enables superpage mapping when VA[47:41] = 7E. In
@@ -1984,17 +2047,8 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 		// copies of PA[40] (sign extension).
 		else if (((virt & SPE_1_MASK) == SPE_1_MATCH) && (spe & 2))
 		{
-			*phys = (virt & SPE_1_MAP) | ((virt & SPE_1_TEST) ? SPE_1_ADD : 0);
-			if (asm_bit)
-				*asm_bit = false;
-#if defined(DEBUG_TB)
-			if (forreal)
-#if defined(IDB)
-				if (bTB_Debug)
-#endif
-					printf("SPE\n");
-#endif
-			return 0;
+			spe_hit = true;
+			spe_phys = (virt & SPE_1_MAP) | ((virt & SPE_1_TEST) ? SPE_1_ADD : 0);
 		}
 
 		// SPE[0], when set, enables superpage mapping when VA[47:30] = 3FFFE.
@@ -2002,7 +2056,27 @@ int CAlphaCPU::virt2phys(u64 virt, u64* phys, int flags, bool* asm_bit, u32 ins)
 		// cleared.
 		else if (((virt & SPE_0_MASK) == SPE_0_MATCH) && (spe & 1))
 		{
-			*phys = virt & SPE_0_MAP;
+			spe_hit = true;
+			spe_phys = virt & SPE_0_MAP;
+		}
+
+		if (spe_hit)
+		{
+			if (cm)
+			{
+#if defined(DEBUG_TB)
+				if (forreal)
+#if defined(IDB)
+					if (bTB_Debug)
+#endif
+						printf("SPE-ACV\n");
+#endif
+				if (!forreal)
+					return -1;
+				return initiate_acv_fault(virt, flags, ins);
+			}
+
+			*phys = spe_phys;
 			if (asm_bit)
 				*asm_bit = false;
 #if defined(DEBUG_TB)

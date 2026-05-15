@@ -312,6 +312,7 @@ private:
 
   int             get_icache(u64 address, u32* data);
   int             FindTBEntry(u64 virt, int flags);
+  int             initiate_acv_fault(u64 virt, int flags, u32 instruction);
   void            add_tb(u64 virt, u64 pte_phys, u64 pte_flags, int flags);
   void            add_tb_i(u64 virt, u64 pte);
   void            add_tb_d(u64 virt, u64 pte);
