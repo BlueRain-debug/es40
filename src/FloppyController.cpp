@@ -87,6 +87,8 @@
 #include "DMA.h"
 #include "Disk.h"
 
+CFloppyController* theFloppy = 0;
+
   /**
    * Constructor.
    **/
@@ -103,6 +105,9 @@ CFloppyController::CFloppyController(CConfigurator* cfg, CSystem* c, int id) : C
 	state.interrupt = false;
 	state.dor = 0x0C;
 	state.reset_sense_cnt = 0;
+	state.dma_pending = false;
+	state.pending_cmd = 0;
+	theFloppy = this;
 
 	printf("%s: $Id$\n",
 		devid_string);
@@ -212,6 +217,8 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 			state.reset_sense_cnt = 0;
 			state.drive[0].seeking = 0;
 			state.drive[1].seeking = 0;
+			state.dma_pending = false;
+			theDMA->set_request(0, 2, 0);
             			clear_interrupt();
        		} else if ((old_dor & 0x04) == 0) {
 			state.reset_sense_cnt = 4;
@@ -293,65 +300,11 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					// 6: EOT = end of track 0x24 = 36 sectors (18 * 2)
 					// 7: GPL = gap length 
 					// 8: DTL = sector size (if N = 0)
-				{
-					int drive_idx = state.cmd_parms[1] & 0x03;
-					int head = (state.cmd_parms[1] >> 2) & 1;
-					int cyl = state.cmd_parms[2];
-					int sector = state.cmd_parms[4];
-					int eot = state.cmd_parms[6];
-					if (eot == 0) eot = 18;
-					int pos = (cyl * 2 + head) * 18 + sector - 1;
-					size_t count = theDMA->get_transfer_size(2);
-					u8* buffer = new u8[count];
-					memset(buffer, 0, count);
-
-					CDisk *disk = FDISK(drive_idx);
-					if (disk) {
-						disk->seek_byte((off_t_large)pos * 512);
-						
-						if (cmd == 6 || cmd == 12) {
-							disk->read_bytes(buffer, count);
-							theDMA->send_data(2, buffer);
-						} else {
-							theDMA->recv_data(2, buffer);
-							disk->write_bytes(buffer, count);
-						}
-					} else { //No disk
-						if (cmd == 6 || cmd == 12) {
-							theDMA->send_data(2, buffer);
-						} else {
-							theDMA->recv_data(2, buffer);
-						}
-					}
-					delete[] buffer; 
-
-					int sectors_read = (int)(count / 512);
-					if (sectors_read == 0) sectors_read = 1;
-
-					for (int i = 0; i < sectors_read; i++) {
-						state.cmd_parms[4]++;
-						if (state.cmd_parms[4] > eot) {
-							state.cmd_parms[4] = 1;
-							state.cmd_parms[3]++;
-							if (state.cmd_parms[3] > 1) {
-								state.cmd_parms[3] = 0;
-								state.cmd_parms[2]++;
-							}
-						}
-					}
-					
-					state.cmd_res[0] = (state.cmd_parms[1] & 0x03) | (head << 2);
-					state.cmd_res[1] = 0;
-					state.cmd_res[2] = 0;
-					state.cmd_res[3] = state.cmd_parms[2];
-					state.cmd_res[4] = state.cmd_parms[3];
-					state.cmd_res[5] = state.cmd_parms[4];
-					state.cmd_res[6] = state.cmd_parms[5];
-					state.drive[drive_idx].seeking = 1;
-
-					do_interrupt();
-				}
-				break;
+					// DMA pending
+					state.pending_cmd = cmd;
+					state.dma_pending = true;
+					theDMA->set_request(0, 2, 1);
+					break;
 
 				case 7: // recalibrate
 				{
@@ -366,11 +319,13 @@ void CFloppyController::WriteMem(int index, u64 address, int dsize, u64 data)
 					if (!state.interrupt){
 						state.cmd_res[0] = 0x80;
 						state.cmd_res[1] = 0;
+						state.cmd_res_max = 1;
 					} else {
 						int drive_idx = state.drive_select & 3;
 						state.cmd_res[0] = 0x20 | drive_idx; // Seek End
 						clear_interrupt();
 						state.cmd_res[1] = state.drive[drive_idx].cylinder; // present cylinder number
+						state.cmd_res_max = 2;
 					}
 					break;
 
@@ -532,6 +487,68 @@ u64 CFloppyController::ReadMem(int index, u64 address, int dsize)
 	return data;
 }
 
+void CFloppyController::do_dma_transfer() {
+	if (!state.dma_pending) return;
+
+	int cmd = state.pending_cmd;
+	int drive_idx = state.cmd_parms[1] & 0x03;
+	int head = (state.cmd_parms[1] >> 2) & 1;
+	int cyl = state.cmd_parms[2];
+	int sector = state.cmd_parms[4];
+	int eot = state.cmd_parms[6];
+	if (eot == 0) eot = 18;
+	int pos = (cyl * 2 + head) * 18 + sector - 1;
+	size_t count = theDMA->get_transfer_size(2);
+	u8* buffer = new u8[count];
+	memset(buffer, 0, count);
+
+	CDisk *disk = FDISK(drive_idx);
+	if (disk) {
+		disk->seek_byte((off_t_large)pos * 512);
+		if (cmd == 6 || cmd == 12) {
+			disk->read_bytes(buffer, count);
+			theDMA->send_data(2, buffer);
+		} else {
+			theDMA->recv_data(2, buffer);
+			disk->write_bytes(buffer, count);
+		}
+	} else { //No disk
+		if (cmd == 6 || cmd == 12) {
+			theDMA->send_data(2, buffer);
+		} else {
+			theDMA->recv_data(2, buffer);
+		}
+	}
+	delete[] buffer; 
+
+	int sectors_read = (int)(count / 512);
+	if (sectors_read == 0) sectors_read = 1;
+
+	for (int i = 0; i < sectors_read; i++) {
+		state.cmd_parms[4]++;
+		if (state.cmd_parms[4] > eot) {
+			state.cmd_parms[4] = 1;
+			state.cmd_parms[3]++;
+			if (state.cmd_parms[3] > 1) {
+				state.cmd_parms[3] = 0;
+				state.cmd_parms[2]++;
+			}
+		}
+	}
+	
+	state.cmd_res[0] = (state.cmd_parms[1] & 0x03) | (head << 2);
+	state.cmd_res[1] = 0;
+	state.cmd_res[2] = 0;
+	state.cmd_res[3] = state.cmd_parms[2];
+	state.cmd_res[4] = state.cmd_parms[3];
+	state.cmd_res[5] = state.cmd_parms[4];
+	state.cmd_res[6] = state.cmd_parms[5];
+	state.drive[drive_idx].seeking = 1;
+
+	state.dma_pending = false;
+	theDMA->set_request(0, 2, 0); // Drop the DRQ
+	do_interrupt();
+}
 
 static u32 fdc_magic1 = 0x0fdc0fdc;
 static u32 fdc_magic2 = 0xfdc0fdc0;

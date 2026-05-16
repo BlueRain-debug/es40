@@ -64,6 +64,7 @@
 #include "DMA.h"
 #include "AliM1543C.h"
 #include "PCIDevice.h"
+#include "FloppyController.h"
 
 CDMA* theDMA = 0;
 
@@ -461,6 +462,10 @@ void CDMA::do_dma()
 					if (state.controller[ctrlr].request & (1 << chnl)) // channel has request
 					{
 						// Do it!
+						if (ctrlr == 0 && chnl == 2) {
+							if (theFloppy) 
+								theFloppy->do_dma_transfer();
+						}
 					}
 				}
 			}

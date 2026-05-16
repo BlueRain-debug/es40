@@ -91,6 +91,7 @@ public:
   virtual int   RestoreState(FILE* f);
   virtual int   SaveState(FILE* f);
   virtual void  init();
+  void          do_dma_transfer();
 
 private:
   void do_interrupt();
@@ -127,6 +128,8 @@ private:
     bool interrupt;
     u8 dor;
     u8 reset_sense_cnt;
+    bool dma_pending;
+    u8 pending_cmd;
 
   } state;
 };
@@ -176,5 +179,7 @@ private:
 #define ST3_HA		0x04		/* Head (Address) */
 #define ST3_TZ		0x10		/* Track Zero signal (1=track 0) */
 #define ST3_WP		0x40		/* Write Protect */
+
+extern CFloppyController* theFloppy;
 
 #endif // !defined(INCLUDED_FLOPPYCONTROLLER_H)
